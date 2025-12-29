@@ -3,6 +3,8 @@ version: "3.8"
 services:
   localstack:
     image: localstack/localstack-pro:latest
+    env_file:
+      - .env 
     ports:
       - "4566:4566"  # Main LocalStack API endpoint
       - "4571:4571"  # Legacy port (deprecated in newer versions)

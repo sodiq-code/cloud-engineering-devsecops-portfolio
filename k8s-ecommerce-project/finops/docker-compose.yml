@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  localstack:
+    image: localstack/localstack-pro:latest
+    container_name: localstack_finops
+    env_file:
+      - ../../.env
+    ports:
+      - "127.0.0.1:4566:4566"            # LocalStack Gateway
+    environment:
+      - LOCALSTACK_AUTH_TOKEN=${LS_TOKEN} # LocalStack Pro Auth Token
+      - SERVICES=s3,sqs,iam,sts,wafv2,kms
+      - PERSISTENCE=1 
+      - DEBUG=0
+    volumes:
+      - "./volume:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"

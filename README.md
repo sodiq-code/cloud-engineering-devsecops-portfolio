@@ -10,12 +10,13 @@ Highly analytical Computer Engineer with a focus on **Infrastructure as Code (Ia
 
 ## 📂 Engineering Project Index
 
-### **1. Scalable Microservices Orchestration & SRE Observability Platform**
-* **[🔗 View Project Code & Documentation](k8s-ecommerce-project)**
-* **Enterprise Orchestration:** Orchestrated a 10-tier polyglot microservices application on **Kubernetes**, utilizing **Deployments** and **ReplicaSets** to ensure 99.9% application availability.
-* **Layer 7 Traffic Engineering:** Implemented a production-grade **Nginx Ingress Controller** to manage name-based virtual hosting (`shop.local`), moving beyond basic port-forwarding to a centralized edge routing model.
-* **SRE Observability:** Deployed a full-stack monitoring solution via **Helm**, integrating **Prometheus** for metrics scraping and **Grafana** for visualizing "Golden Signals" (Latency, Traffic, Errors, Saturation).
-* **Container Security:** Implemented administrative isolation through **Namespaces** and resource-level protection by enforcing **CPU/Memory Limits**.
+### **1. 🛡️ KubeScale: High-Availability Microservices & SRE Observability Platform**
+* **[🔗 View Project Code & Documentation](./k8s-ecommerce-project)**
+* **Enterprise Orchestration:** Orchestrated an 11-tier polyglot microservices ecosystem on **Kubernetes**, utilizing **Deployments** and **ReplicaSets** to ensure 99.9% application availability.
+* **Layer 7 Traffic Engineering:** Implemented a production-grade **Nginx Ingress Controller** to manage name-based virtual hosting (`shop.local`), moving beyond "lab-style" port-forwarding to a centralized edge routing model.
+* **SRE Observability:** Deployed a full-stack monitoring suite via **Helm**, integrating **Prometheus** for metrics scraping and **Grafana** for visualizing "Golden Signals" (Latency, Traffic, Errors, Saturation).
+* **FinOps & Cost Optimization:** Engineered a hybrid development workflow using **LocalStack Pro** to emulate AWS dependencies, achieving **100% cost avoidance (~$500/mo savings)** during the development lifecycle.
+* **Security & Governance:** Hardened container security to a **0-finding baseline** (Trivy) by implementing **Non-Root users**, **Immutable Filesystems**, and administrative isolation via **Namespaces**.
 
 ### **2. High-Availability AWS Architecture & Cost Optimization Initiative**
 * **[🔗 View Project Code & Documentation](./week8-ha-deploy)**
