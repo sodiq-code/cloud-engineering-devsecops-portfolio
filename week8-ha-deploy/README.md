@@ -7,6 +7,9 @@ This project is an architectural upgrade to [Project A](../week6-deploy). While 
 It transforms a single-server architecture into a **Self-Healing Fleet** using Application Load Balancers (ALB) and Auto Scaling Groups (ASG), protected by a Web Application Firewall (WAF).
 
 ## 2. Architecture & Traffic Flow
+![Project A+ Final Architecture](../docs/week6/architecture_diagram_final.png)
+
+## 2. Traffic Flow
 `Internet` -> **`WAF`** (SQLi Block) -> **`ALB`** (Traffic Dist.) -> **`Security Group`** (Port 80) -> **`EC2 Instances`** (Private)
 
 ## 3. Key Features Implemented

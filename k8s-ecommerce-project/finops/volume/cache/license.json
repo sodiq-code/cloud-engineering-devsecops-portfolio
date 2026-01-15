@@ -1,9 +1,9 @@
 {
-  "id": "80c1221a-8673-4907-9e00-67cf363b0c40",
+  "id": "bfe77524-3b68-4939-9ad7-aeacb73c3f6e",
   "license_format": "1",
-  "signature": "a7cdbc8be2e2833e19c8a24920e87a547c6ae2b6293a01bed24c30145169e1cd",
+  "signature": "091b9fa2510629f25e30e1f8059dd9c5b388a5174d902aff01c2f938e6f5241e",
   "license_type": "student",
-  "issue_date": "2025-12-27T22:47:51+00:00",
+  "issue_date": "2025-12-30T00:24:00+00:00",
   "expiry_date": "2026-11-21T21:25:49+00:00",
   "products": [
     {
@@ -958,9 +958,9 @@
     }
   ],
   "license_status": "ACTIVE",
-  "license_secret": "TFMxLjA6RV+zda78eiOe+HQhndw7TkaNuruagWagMJ19w+U5WmPrqVfPW6xLN/g6kfsdU1if",
-  "last_activated": "2025-12-27T22:47:51.566087Z",
-  "reactivate_after": "2025-12-28T22:47:51+00:00",
+  "license_secret": "TFMxLjA6M9m43GUVJJVrxuwbKEDbvcE2MsBBag9Q7iz7NGMDNvxjaVfOQaSRAs4ihPTpePbW",
+  "last_activated": "2025-12-30T00:24:00.730501Z",
+  "reactivate_after": "2025-12-31T00:24:00+00:00",
   "offline_data": {
     "localstack_version": "4.11.2.dev1"
   }

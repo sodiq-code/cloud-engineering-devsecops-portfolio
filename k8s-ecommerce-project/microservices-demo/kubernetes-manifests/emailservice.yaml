@@ -36,6 +36,9 @@ spec:
         runAsUser: 1000
       containers:
       - name: server
+        envFrom:
+        - configMapRef:
+            name: cloud-config
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -43,7 +46,8 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: emailservice
+        image: gcr.io/google-samples/microservices-demo/emailservice:v0.10.1
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:

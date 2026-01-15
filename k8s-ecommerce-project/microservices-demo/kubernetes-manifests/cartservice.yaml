@@ -36,6 +36,9 @@ spec:
         runAsUser: 1000
       containers:
       - name: server
+        envFrom:
+        - configMapRef:
+            name: cloud-config
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -43,7 +46,8 @@ spec:
               - ALL
           privileged: false
           readOnlyRootFilesystem: true
-        image: cartservice
+        image: gcr.io/google-samples/microservices-demo/cartservice:v0.10.1
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 7070
         env:
@@ -116,6 +120,7 @@ spec:
           privileged: false
           readOnlyRootFilesystem: true
         image: redis:alpine
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 6379
         readinessProbe:
