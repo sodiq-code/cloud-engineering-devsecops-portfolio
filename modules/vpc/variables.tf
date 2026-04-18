@@ -1,29 +1,72 @@
-# CIDR block for the main VPC where all resources will be provisioned.
-# Default covers 65,536 IPs (10.0.0.0 - 10.0.255.255).
+# modules/vpc/variables.tf
+
 variable "vpc_cidr" {
-    default = "10.0.0.0/16"
+    description = "CIDR block for the main VPC (covers 65,536 IPs)"
+    type        = string
+    default     = "10.0.0.0/16"
+
+    validation {
+        condition     = can(cidrhost(var.vpc_cidr, 0))
+        error_message = "vpc_cidr must be a valid IPv4 CIDR block."
+    }
 }
 
-# CIDR block for the public subnet.
-# Used for resources that need direct internet access (e.g., NAT gateways, public load balancers, bastion hosts).
 variable "public_subnet_cidr" {
-    default = "10.0.1.0/24"
+    description = "CIDR for public subnet A (ALB, NAT Gateway, bastion hosts)"
+    type        = string
+    default     = "10.0.1.0/24"
+
+    validation {
+        condition     = can(cidrhost(var.public_subnet_cidr, 0))
+        error_message = "public_subnet_cidr must be a valid IPv4 CIDR block."
+    }
 }
 
-# CIDR block for the private subnet.
-# Used for internal resources (e.g., application servers, databases) without direct internet exposure.
+variable "public_subnet_b_cidr" {
+    description = "CIDR for public subnet B (second AZ — required for ALB HA)"
+    type        = string
+    default     = "10.0.3.0/24"
+
+    validation {
+        condition     = can(cidrhost(var.public_subnet_b_cidr, 0))
+        error_message = "public_subnet_b_cidr must be a valid IPv4 CIDR block."
+    }
+}
+
 variable "private_subnet_cidr" {
-    default = "10.0.2.0/24"
+    description = "CIDR for private subnet A (application servers, databases)"
+    type        = string
+    default     = "10.0.2.0/24"
+
+    validation {
+        condition     = can(cidrhost(var.private_subnet_cidr, 0))
+        error_message = "private_subnet_cidr must be a valid IPv4 CIDR block."
+    }
 }
 
-# Logical name of the deployment environment (e.g., "dev", "staging", "prod").
-# Commonly used for tagging and naming resources for easier identification.
+variable "private_subnet_b_cidr" {
+    description = "CIDR for private subnet B (second AZ for HA)"
+    type        = string
+    default     = "10.0.4.0/24"
+
+    validation {
+        condition     = can(cidrhost(var.private_subnet_b_cidr, 0))
+        error_message = "private_subnet_b_cidr must be a valid IPv4 CIDR block."
+    }
+}
+
 variable "environment" {
-    type = string
+    description = "Deployment environment name used in resource naming and tagging (e.g., dev, staging, prod)"
+    type        = string
+
+    validation {
+        condition     = length(var.environment) > 0
+        error_message = "environment must not be empty."
+    }
 }
 
-# AWS region where the VPC and related resources will be created.
-# Default is the N. Virginia region.
 variable "region" {
-    default = "us-east-1"
+    description = "AWS region for subnet AZ placement"
+    type        = string
+    default     = "us-east-1"
 }

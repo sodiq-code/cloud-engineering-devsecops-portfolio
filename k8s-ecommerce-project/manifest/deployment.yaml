@@ -1,35 +1,121 @@
+# Email Service Deployment
+# Security hardening: non-root, read-only filesystem, all capabilities dropped.
+# SRE hardening: resource limits, liveness/readiness probes, anti-affinity rules.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: email-service-deployment
+  namespace: ecommerce
   labels:
     app: email-service
+    version: v1
+    tier: backend
 spec:
-  replicas: 6 # <--- This tells K8s: "I always want 3 copies running"
+  replicas: 2                          # Initial replicas = HPA minReplicas; HPA will scale 2→10 dynamically
   selector:
     matchLabels:
-      app: email-service # <--- This is how the Deployment finds its Pods
+      app: email-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1                      # Allow one extra pod during rollout
+      maxUnavailable: 0                # Never take a replica offline during rollout
   template:
     metadata:
       labels:
-        app: email-service # <--- The "Label" we put on the Pods
+        app: email-service
+        version: v1
     spec:
-      # ADD THIS: Pod-level security context
+      # -----------------------------------------------------------------------
+      # POD-LEVEL SECURITY CONTEXT
+      # Applies to all containers in the pod unless overridden at container level
+      # -----------------------------------------------------------------------
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        runAsGroup: 3000
         fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault           # Use the container runtime's default seccomp profile
+
+      # -----------------------------------------------------------------------
+      # ANTI-AFFINITY — spread replicas across nodes
+      # Prevents all 3 pods landing on the same node (single-point-of-failure)
+      # -----------------------------------------------------------------------
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: email-service
+                topologyKey: kubernetes.io/hostname
+
       containers:
-      - name: email-app
-        image: email-service:v1 # <--- The image you built on Day 1
-        imagePullPolicy: Never # <--- Tells Minikube: "Use the local image, don't look on the internet"
-        securityContext:
-          allowPrivilegeEscalation: false
-          runAsNonRoot: true
-          runAsUser: 1000
-          readOnlyRootFilesystem: true  # This stops attackers from writing malware to disk
-          capabilities:
-            drop:
-              - ALL
-        ports:
-        - containerPort: 8080
+        - name: email-app
+          image: email-service:v1      # Minikube local image
+          imagePullPolicy: Never       # Never pull from registry — use local build
+
+          # -------------------------------------------------------------------
+          # CONTAINER-LEVEL SECURITY CONTEXT (overrides pod-level where needed)
+          # -------------------------------------------------------------------
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true   # Blocks disk-based malware persistence
+            capabilities:
+              drop:
+                - ALL                      # Remove ALL Linux capabilities — minimal attack surface
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # -------------------------------------------------------------------
+          # RESOURCE MANAGEMENT — prevents OOMKill and CPU starvation
+          # -------------------------------------------------------------------
+          resources:
+            requests:
+              memory: "64Mi"              # Guaranteed minimum memory
+              cpu: "50m"                  # Guaranteed minimum CPU (50 millicores)
+            limits:
+              memory: "128Mi"             # Hard cap — pod is killed if exceeded (OOMKill)
+              cpu: "200m"                 # Throttled if exceeded (not killed)
+
+          # -------------------------------------------------------------------
+          # LIVENESS PROBE — Kubernetes restarts the pod if this fails
+          # Detects deadlocks and frozen processes that are still "running"
+          # -------------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15       # Wait for app startup
+            periodSeconds: 20             # Check every 20 seconds
+            failureThreshold: 3           # Restart after 3 consecutive failures
+
+          # -------------------------------------------------------------------
+          # READINESS PROBE — Kubernetes removes pod from Service if this fails
+          # Prevents traffic from routing to pods that aren't ready to serve
+          # -------------------------------------------------------------------
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # -------------------------------------------------------------------
+          # WRITABLE TEMP DIRECTORY — required since root filesystem is read-only
+          # -------------------------------------------------------------------
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}                    # Ephemeral in-memory temp space

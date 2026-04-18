@@ -2,12 +2,14 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ProtectCloudTrail",
+      "Sid": "ProtectCloudTrailIntegrity",
       "Effect": "Deny",
       "Action": [
         "cloudtrail:StopLogging",
         "cloudtrail:DeleteTrail",
-        "cloudtrail:UpdateTrail"
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:CreateTrail",
+        "cloudtrail:PutEventSelectors"
       ],
       "Resource": "*"
     }

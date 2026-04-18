@@ -1,111 +1,109 @@
-# -----------------------------------------------------------------------------
-# VERSION LOCK (The Fix for LocalStack)
-# Pins the AWS provider to version 5.x to avoid "credit specification" errors
-# that can occur with LocalStack when using other provider versions.
-# -----------------------------------------------------------------------------
+# week5-local-deploy/main.tf
+# First full-stack local deployment: VPC + IAM + Security + Hardened EC2.
+# All four modules work together to create a production-mirrored local environment.
+# Demonstrates the module composition pattern used in all subsequent projects.
+
 terraform {
     required_providers {
         aws = {
             source  = "hashicorp/aws"
-            version = "~> 5.0"    
+            version = "~> 5.0"
         }
     }
 }
 
-# -----------------------------------------------------------------------------
-# AWS Provider Configuration for LocalStack
-# LocalStack is a local AWS cloud emulator for testing infrastructure locally.
-# Uses dummy credentials ("test") since LocalStack doesn't require real AWS keys.
-# -----------------------------------------------------------------------------
 provider "aws" {
-        region                      = "us-east-1"
-        access_key                  = "test"          # Dummy credential for LocalStack
-        secret_key                  = "test"          # Dummy credential for LocalStack
-        skip_credentials_validation = true            # Skip AWS credential validation
-        skip_requesting_account_id  = true            # Skip AWS account ID lookup
+    region                      = "us-east-1"
+    access_key                  = "test"
+    secret_key                  = "test"
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
 
-        # Route all AWS API calls to LocalStack running on localhost:4566
-        endpoints {
-                ec2 = "http://localhost:4566"
-                iam = "http://localhost:4566"
-                sts = "http://localhost:4566"
-                kms = "http://localhost:4566"
-        }
+    endpoints {
+        ec2 = "http://localhost:4566"
+        iam = "http://localhost:4566"
+        sts = "http://localhost:4566"
+        kms = "http://localhost:4566"
+    }
 }
 
-# -----------------------------------------------------------------------------
-# VPC Module
-# Creates the network infrastructure (VPC, subnets, route tables, etc.)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# MODULE 1: Network Layer
+# =============================================================================
 module "vpc" {
-        source      = "../modules/vpc"
-        environment = "local"
-        region      = "us-east-1"
+    source      = "../modules/vpc"
+    environment = "local"
+    region      = "us-east-1"
 }
 
-# -----------------------------------------------------------------------------
-# IAM Module
-# Creates IAM roles and instance profiles for EC2 permissions
-# -----------------------------------------------------------------------------
+# =============================================================================
+# MODULE 2: Identity Layer (Least Privilege)
+# =============================================================================
 module "iam" {
-        source      = "../modules/iam"
-        environment = "local"
+    source            = "../modules/iam"
+    environment       = "local"
+    target_bucket_arn = "*"    # Scoped to specific bucket in production
 }
 
-# -----------------------------------------------------------------------------
-# Security Group (Firewall Rules)
-# Defines inbound/outbound traffic rules for the web server.
-# - Allows inbound HTTP (port 80) from any IP address
-# - Allows all outbound traffic to HTTPS (port 443) (required for updates, external APIs, etc.)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# SECURITY GROUP — Web Server Firewall Rules
+# Inbound: HTTP from internet only
+# Outbound: Restricted to VPC CIDR (defence-in-depth, prevents exfiltration)
+# =============================================================================
 resource "aws_security_group" "web_sg" {
-        name        = "web-server-sg"
-        description = "Allow HTTP traffic"
-        vpc_id      = module.vpc.vpc_id       # Attach to VPC created by module
+    name        = "web-server-sg"
+    description = "Allow HTTP inbound; restrict egress to VPC"
+    vpc_id      = module.vpc.vpc_id
 
-        # Inbound rule: Allow HTTP traffic from anywhere
-        ingress {
-                from_port   = 80
-                to_port     = 80
-                protocol    = "tcp"
-                cidr_blocks = ["0.0.0.0/0"]        # WARNING: Open to all IPs (use cautiously)
-        }
+    ingress {
+        description = "HTTP from internet"
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
 
-        # Outbound rule: Restrict Egress Traffic (Security Best Practice)
-        # Instead of allowing unrestricted outbound access (0.0.0.0/0), this rule
-        # limits egress to only the VPC CIDR block (10.0.0.0/16).
-
-        egress {
-                description = "Restrict egress to VPC only - blocks internet access"
-                from_port   = 0                   # All ports
-                to_port     = 0                   # All ports
-                protocol    = "-1"                # All protocols (-1 = any)
-                cidr_blocks = ["10.0.0.0/16"]     # VPC internal traffic only
-        }
+    egress {
+        description = "Restrict egress to VPC CIDR only (prevents internet exfiltration)"
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["10.0.0.0/16"]
+    }
 }
 
-# --------------------------------------------------------------------------
-# EC2 Instance (Web Server)
+# =============================================================================
+# EC2 WEB SERVER — Hardened Configuration
+# Security controls: IMDSv2, encrypted root volume, IAM role, no public IP
+# =============================================================================
 resource "aws_instance" "web" {
-    ami                    = "ami-12345678"
-    instance_type          = "t2.micro"                        
+    ami                    = "ami-12345678"        # LocalStack dummy AMI
+    instance_type          = "t2.micro"
     subnet_id              = module.vpc.public_subnet_id
     iam_instance_profile   = module.iam.instance_profile_name
     vpc_security_group_ids = [aws_security_group.web_sg.id]
 
-    tags = {
-        Name = "Project-A-WebServer"
-    }
+    # IMDSv2: Session tokens required — prevents SSRF attacks on the metadata service
     metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"  # Forces IMDSv2
-  }
-  root_block_device {
-    encrypted = true
-  }
-  timeouts {
-        create = "1m"
+        http_endpoint               = "enabled"
+        http_tokens                 = "required"
+        http_put_response_hop_limit = 1
+    }
+
+    # Encrypt root volume — all data at rest is protected
+    root_block_device {
+        encrypted             = true
+        volume_type           = "gp3"
+        delete_on_termination = true
+    }
+
+    timeouts {
+        create = "2m"
+    }
+
+    tags = {
+        Name        = "Week5-Secure-WebServer"
+        Environment = "local"
+        ManagedBy   = "Terraform"
     }
 }
-
-

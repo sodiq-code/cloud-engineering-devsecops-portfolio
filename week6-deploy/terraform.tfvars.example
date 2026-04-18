@@ -1,0 +1,6 @@
+# terraform.tfvars.example
+# Copy to terraform.tfvars for local customisation.
+# No secrets — credentials are passed via environment variables in production.
+
+# Defaults work for LocalStack out of the box.
+# environment = "local"

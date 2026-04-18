@@ -1,0 +1,81 @@
+# network-policy.yaml — Zero-Trust Network Policies for the ECommerce Platform
+# By default, Kubernetes allows all pod-to-pod traffic.
+# These policies implement a deny-all baseline with explicit allow rules — 
+# the Kubernetes equivalent of a Zero-Trust security model.
+
+---
+# Default deny all ingress and egress for the ecommerce namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: ecommerce
+spec:
+  podSelector: {}          # Applies to ALL pods in the namespace
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow the email-service to receive traffic ONLY from the frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-email
+  namespace: ecommerce
+spec:
+  podSelector:
+    matchLabels:
+      app: email-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend              # Only the frontend can call the email service
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# Allow the email-service egress ONLY to DNS (required for name resolution)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-email-dns-egress
+  namespace: ecommerce
+spec:
+  podSelector:
+    matchLabels:
+      app: email-service
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53                       # DNS resolution only
+        - protocol: TCP
+          port: 53
+
+---
+# Allow the Nginx Ingress Controller to reach the frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: ecommerce
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx   # Ingress controller namespace
+      ports:
+        - protocol: TCP
+          port: 80

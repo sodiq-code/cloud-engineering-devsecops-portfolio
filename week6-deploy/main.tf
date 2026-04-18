@@ -1,30 +1,25 @@
-# =============================================================================
-# AWS Provider Configuration for LocalStack
-# =============================================================================
-# This configures Terraform to use LocalStack (local AWS emulator) instead of 
-# real AWS services. LocalStack runs on localhost:4566 and allows testing 
-# infrastructure without incurring AWS costs.
-# =============================================================================
+# week6-deploy/main.tf
+# Full-stack local deployment: VPC + IAM + Security Monitoring + Hardened EC2.
+# Extends week5 by adding CloudTrail audit trail and GuardDuty threat detection,
+# demonstrating the "Security Layer" composition pattern.
+
 terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"  # Force Version 5 to fix S3 XML errors
+    required_providers {
+        aws = {
+            source  = "hashicorp/aws"
+            version = "~> 5.0"
+        }
     }
-  }
 }
 
 provider "aws" {
     region                      = "us-east-1"
-    access_key                  = "test"        # Dummy credentials for LocalStack
-    secret_key                  = "test"        # Dummy credentials for LocalStack
-    skip_credentials_validation = true          # Skip AWS credential validation
-    skip_requesting_account_id  = true          # Skip AWS account ID lookup
+    access_key                  = "test"
+    secret_key                  = "test"
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    s3_use_path_style           = true
 
-    s3_use_path_style           = true         # Use path-style URLs for S3
-
-
-    # Route all AWS API calls to LocalStack endpoints
     endpoints {
         ec2        = "http://localhost:4566"
         iam        = "http://localhost:4566"
@@ -37,125 +32,98 @@ provider "aws" {
 }
 
 # =============================================================================
-# Module 1: Logging Layer
-# =============================================================================
-# Creates the centralized S3 bucket for storing security logs.
-# This must be created FIRST as other modules depend on it.
-# Think of it as "setting up the security camera storage" before the cameras.
+# LAYER 1: Logging (Audit Log Storage)
 # =============================================================================
 module "logging" {
     source        = "../modules/logging"
     environment   = "local"
-    random_suffix = "12345"              # Ensures unique bucket naming
+    random_suffix = "12345"
 }
 
 # =============================================================================
-# Module 2: Security Layer
-# =============================================================================
-# Configures security monitoring services (CloudTrail, GuardDuty).
-# Depends on logging module - sends all security events to the log bucket.
-# Acts as the "security cameras" watching for suspicious activity.
+# LAYER 2: Security Monitoring (CloudTrail + GuardDuty)
 # =============================================================================
 module "security" {
     source          = "../modules/security"
     environment     = "local"
-    log_bucket_name = module.logging.bucket_name  # Where to store security logs
+    log_bucket_name = module.logging.bucket_name
 }
 
 # =============================================================================
-# Module 3: Network Layer
-# =============================================================================
-# Creates the VPC (Virtual Private Cloud) network infrastructure.
-# Defines the network boundaries, subnets, and routing for resources.
-# This is the "building structure" that contains all other resources.
+# LAYER 3: Network Infrastructure
 # =============================================================================
 module "vpc" {
     source      = "../modules/vpc"
     environment = "local"
+    region      = "us-east-1"
 }
 
 # =============================================================================
-# Module 4: Identity Layer
-# =============================================================================
-# Configures IAM roles and policies for access control.
-# Follows least-privilege principle - only grants access to specific resources.
-# These are the "staff credentials" that define who can access what.
+# LAYER 4: Identity & Access (Least Privilege)
 # =============================================================================
 module "iam" {
     source            = "../modules/iam"
     environment       = "local"
-    # Restricts IAM permissions to ONLY the logging bucket (least-privilege)
     target_bucket_arn = module.logging.bucket_arn
 }
 
-# -----------------------------------------------------------------------------
-# Security Group (Firewall Rules)
-# Defines inbound/outbound traffic rules for the web server.
-# - Allows inbound HTTP (port 80) from any IP address
-# - Allows all outbound traffic to HTTPS (port 443) (required for updates, external APIs, etc.)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# SECURITY GROUP — Hardened firewall rules
+# =============================================================================
 resource "aws_security_group" "web_sg" {
-        name        = "web-server-sg"
-        description = "Allow HTTP traffic"
-        vpc_id      = module.vpc.vpc_id       # Attach to VPC created by module
+    name        = "web-server-sg"
+    description = "Allow HTTP inbound; restrict egress to VPC CIDR"
+    vpc_id      = module.vpc.vpc_id
 
-        # Inbound rule: Allow HTTP traffic from anywhere
-        ingress {
-                from_port   = 80
-                to_port     = 80
-                protocol    = "tcp"
-                cidr_blocks = ["0.0.0.0/0"]        # WARNING: Open to all IPs (use cautiously)
-        }
+    ingress {
+        description = "HTTP from internet"
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
 
-        # Outbound rule: Restrict Egress Traffic (Security Best Practice)
-        # Instead of allowing unrestricted outbound access (0.0.0.0/0), this rule
-        # limits egress to only the VPC CIDR block (10.0.0.0/16).
-
-        egress {
-                description = "Restrict egress to VPC only - blocks internet access"
-                from_port   = 0                   # All ports
-                to_port     = 0                   # All ports
-                protocol    = "-1"                # All protocols (-1 = any)
-                cidr_blocks = ["10.0.0.0/16"]     # VPC internal traffic only
-        }
+    egress {
+        description = "Restrict egress to VPC only — prevents data exfiltration"
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["10.0.0.0/16"]
+    }
 }
 
 # =============================================================================
-# Compute Resource (EC2 Instance)
+# EC2 WEB SERVER — Fully hardened, security-monitored instance
+# Added in week6: instance is now audited by CloudTrail + GuardDuty
 # =============================================================================
-# The actual Web Server instance.
-# - Placed in the Public Subnet (from VPC module)
-# - Protected by the Security Group defined above
-# - Identity provided by the IAM Instance Profile (from IAM module)
-# =============================================================================
-# resource "aws_instance" "web" {
-#   ami           = "ami-12345678"  # LocalStack dummy AMI
-#   instance_type = "t2.micro"
+resource "aws_instance" "web" {
+    ami                    = "ami-12345678"        # LocalStack dummy AMI
+    instance_type          = "t2.micro"
+    subnet_id              = module.vpc.public_subnet_id
+    iam_instance_profile   = module.iam.instance_profile_name
+    vpc_security_group_ids = [aws_security_group.web_sg.id]
 
-#   # Network Placement
-#   subnet_id              = module.vpc.public_subnet_id
-#   vpc_security_group_ids = [aws_security_group.web_sg.id]
+    # IMDSv2: Prevents SSRF credential theft via instance metadata endpoint
+    metadata_options {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required"
+        http_put_response_hop_limit = 1
+    }
 
-#   # Identity (The IAM Role)
-#   iam_instance_profile = module.iam.instance_profile_name
+    # Encrypt root volume at rest using AES-256
+    root_block_device {
+        encrypted             = true
+        volume_type           = "gp3"
+        delete_on_termination = true
+    }
 
-#   # Hardening: Enforce IMDSv2 (Token required) to prevent SSRF
-#   metadata_options {
-#     http_tokens   = "required"
-#     http_endpoint = "enabled"
-#   }
+    timeouts {
+        create = "2m"
+    }
 
-#   # Hardening: Encrypt Root Volume
-#   root_block_device {
-#     encrypted = true
-#   }
-
-#   # Timeout setting to prevent "Hanging" issues in LocalStack
-#   timeouts {
-#     create = "1m"
-#   }
-
-#   tags = {
-#     Name = "Project-A-Secure-Web-Server"
-#   }
-# }
+    tags = {
+        Name        = "Week6-Secure-WebServer"
+        Environment = "local"
+        ManagedBy   = "Terraform"
+    }
+}

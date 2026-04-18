@@ -1,64 +1,170 @@
 # modules/vpc/main.tf
+# Production-grade VPC module with:
+# - Dual-AZ public and private subnets for true high availability
+# - NAT Gateway for secure private subnet egress
+# - Consistent tagging strategy
 
-# Define a VPC resource named "main"
-resource "aws_vpc" "main" {                          # Create an AWS VPC named "main"
-    cidr_block           = var.vpc_cidr              # Use the CIDR block passed via variable vpc_cidr
-    enable_dns_support   = true                      # Enable internal DNS resolution in the VPC
-    enable_dns_hostnames = true                      # Enable DNS hostnames for instances with public IPs
+# =============================================================================
+# CORE VPC
+# =============================================================================
+resource "aws_vpc" "main" {
+    cidr_block           = var.vpc_cidr
+    enable_dns_support   = true
+    enable_dns_hostnames = true
 
-    tags = {                                          # Add metadata tags to the VPC
-        Name = "${var.environment}-vpc"              # Name tag combining environment (e.g., dev) and suffix "vpc"
+    tags = {
+        Name        = "${var.environment}-vpc"
+        Environment = var.environment
+        ManagedBy   = "Terraform"
     }
 }
 
-# Define an Internet Gateway resource named "igw"
-resource "aws_internet_gateway" "igw" {              # Create an Internet Gateway for outbound internet access
-    vpc_id = aws_vpc.main.id                         # Attach the Internet Gateway to the created VPC
+# =============================================================================
+# INTERNET GATEWAY — Enables outbound internet access for public subnets
+# =============================================================================
+resource "aws_internet_gateway" "igw" {
+    vpc_id = aws_vpc.main.id
 
-    tags = {                                          # Add metadata tags to the Internet Gateway
-        Name = "${var.environment}-igw"              # Name tag combining environment and suffix "igw"
+    tags = {
+        Name        = "${var.environment}-igw"
+        Environment = var.environment
     }
 }
 
-# Define a public subnet resource
-resource "aws_subnet" "public" {                     # Create a public subnet resource
-    vpc_id                  = aws_vpc.main.id        # Place the subnet in the previously created VPC
-    cidr_block              = var.public_subnet_cidr # Use CIDR for the public subnet from variable
-    map_public_ip_on_launch = false                  # Do not auto-assign public IPs to instances launched here
-    availability_zone       = "${var.region}a"       # Set the subnet to the first AZ in the given region
+# =============================================================================
+# PUBLIC SUBNETS — Two AZs for ALB and NAT Gateway placement
+# ALB requires subnets in at least two AZs for production deployments
+# =============================================================================
+resource "aws_subnet" "public_a" {
+    vpc_id                  = aws_vpc.main.id
+    cidr_block              = var.public_subnet_cidr
+    map_public_ip_on_launch = false           # Explicit control; assign EIPs only where needed
+    availability_zone       = "${var.region}a"
 
-    tags = {                                          # Add metadata tags to the public subnet
-        Name = "${var.environment}-public-subnet"    # Name tag marking this as the environment’s public subnet
+    tags = {
+        Name        = "${var.environment}-public-subnet-a"
+        Environment = var.environment
+        Tier        = "public"
     }
 }
 
-# Define a private subnet resource
-resource "aws_subnet" "private" {                    # Create a private subnet resource
-    vpc_id            = aws_vpc.main.id              # Place the subnet in the same VPC as the public subnet
-    cidr_block        = var.private_subnet_cidr      # Use CIDR for the private subnet from variable
-    availability_zone = "${var.region}a"             # Use the same AZ as the public subnet for simplicity
+resource "aws_subnet" "public_b" {
+    vpc_id                  = aws_vpc.main.id
+    cidr_block              = var.public_subnet_b_cidr
+    map_public_ip_on_launch = false
+    availability_zone       = "${var.region}b"
 
-    tags = {                                          # Add metadata tags to the private subnet
-        Name = "${var.environment}-private-subnet"   # Name tag marking this as the environment’s private subnet
+    tags = {
+        Name        = "${var.environment}-public-subnet-b"
+        Environment = var.environment
+        Tier        = "public"
     }
 }
 
-# Define a route table for the public subnet
-resource "aws_route_table" "public" {                # Create a route table for public subnet routing
-    vpc_id = aws_vpc.main.id                         # Associate the route table with the created VPC
+# =============================================================================
+# PRIVATE SUBNETS — Two AZs for application servers (no direct internet access)
+# =============================================================================
+resource "aws_subnet" "private_a" {
+    vpc_id            = aws_vpc.main.id
+    cidr_block        = var.private_subnet_cidr
+    availability_zone = "${var.region}a"
 
-    route {                                           # Define a route in this route table
-        cidr_block = "0.0.0.0/0"                     # Match all IPv4 addresses (default route)
-        gateway_id = aws_internet_gateway.igw.id     # Send traffic to the attached Internet Gateway
-    }
-
-    tags = {                                          # Add metadata tags to the public route table
-        Name = "${var.environment}-public-rt"        # Name tag marking this as the environment’s public route table
+    tags = {
+        Name        = "${var.environment}-private-subnet-a"
+        Environment = var.environment
+        Tier        = "private"
     }
 }
 
-# Associate the public route table with the public subnet
-resource "aws_route_table_association" "public" {    # Link the public route table to the public subnet
-    subnet_id      = aws_subnet.public.id            # ID of the public subnet to be associated
-    route_table_id = aws_route_table.public.id       # ID of the public route table to use for routing
+resource "aws_subnet" "private_b" {
+    vpc_id            = aws_vpc.main.id
+    cidr_block        = var.private_subnet_b_cidr
+    availability_zone = "${var.region}b"
+
+    tags = {
+        Name        = "${var.environment}-private-subnet-b"
+        Environment = var.environment
+        Tier        = "private"
+    }
+}
+
+# =============================================================================
+# NAT GATEWAY — Allows private subnets outbound internet access
+# without exposing them to inbound internet traffic (one-way firewall)
+# =============================================================================
+resource "aws_eip" "nat" {
+    domain = "vpc"
+
+    tags = {
+        Name        = "${var.environment}-nat-eip"
+        Environment = var.environment
+    }
+}
+
+resource "aws_nat_gateway" "nat" {
+    allocation_id = aws_eip.nat.id
+    subnet_id     = aws_subnet.public_a.id    # NAT Gateway lives in the public subnet
+
+    depends_on = [aws_internet_gateway.igw]
+
+    tags = {
+        Name        = "${var.environment}-nat-gw"
+        Environment = var.environment
+    }
+}
+
+# =============================================================================
+# ROUTE TABLES
+# =============================================================================
+
+# Public route table — all internet traffic goes through the IGW
+resource "aws_route_table" "public" {
+    vpc_id = aws_vpc.main.id
+
+    route {
+        cidr_block = "0.0.0.0/0"
+        gateway_id = aws_internet_gateway.igw.id
+    }
+
+    tags = {
+        Name        = "${var.environment}-public-rt"
+        Environment = var.environment
+    }
+}
+
+# Private route table — outbound internet routes through NAT Gateway (no inbound)
+resource "aws_route_table" "private" {
+    vpc_id = aws_vpc.main.id
+
+    route {
+        cidr_block     = "0.0.0.0/0"
+        nat_gateway_id = aws_nat_gateway.nat.id
+    }
+
+    tags = {
+        Name        = "${var.environment}-private-rt"
+        Environment = var.environment
+    }
+}
+
+# Associate public subnets with the public route table
+resource "aws_route_table_association" "public_a" {
+    subnet_id      = aws_subnet.public_a.id
+    route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_b" {
+    subnet_id      = aws_subnet.public_b.id
+    route_table_id = aws_route_table.public.id
+}
+
+# Associate private subnets with the private route table (NAT-egress only)
+resource "aws_route_table_association" "private_a" {
+    subnet_id      = aws_subnet.private_a.id
+    route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_b" {
+    subnet_id      = aws_subnet.private_b.id
+    route_table_id = aws_route_table.private.id
 }
