@@ -223,9 +223,30 @@ Formal documentation of major architectural decisions — demonstrating senior-l
 ├── incident-reports/           # Formal IR: NIST SP 800-61 incident report
 ├── modules/                    # Reusable Terraform: vpc, logging, security, iam
 ├── docs/
-│   └── adr/                    # Architecture Decision Records (ADR-001, ADR-002, ADR-003)
+│   ├── adr/                    # Architecture Decision Records (ADR-001, ADR-002, ADR-003)
+│   └── reality-check/          # What actually broke on each project and how it was fixed
 └── .trivyignore                # Documented exception list for lab-environment findings
 ```
+
+---
+
+## 🔴 Reality Check Documentation
+
+**This portfolio was not built on the happy path.** Every project encountered real engineering failures. The documents below record what broke, the exact root cause, how it was fixed, and what it would have cost in production.
+
+| # | Project | Hardest Failure |
+| :-- | :-- | :-- |
+| 1 | [IaC Foundations](./docs/reality-check/REALITY_CHECK_01_IaC_FOUNDATIONS.md) | KMS wildcard key policy — any IAM identity in the account could decrypt logs |
+| 2 | [S3 Secure Storage](./docs/reality-check/REALITY_CHECK_02_S3_SECURE_STORAGE.md) | TLS-only bucket policy blocked all LocalStack requests (HTTP-only dev environment) |
+| 3 | [Security Stack](./docs/reality-check/REALITY_CHECK_03_SECURITY_STACK.md) | CloudTrail → S3 bucket policy circular dependency on first apply |
+| 4 | [HA AWS Architecture](./docs/reality-check/REALITY_CHECK_04_HA_AWS_ARCHITECTURE.md) | Single-AZ VPC broke ALB creation — ALB requires 2 subnets in 2 AZs |
+| 5 | [Enterprise Governance](./docs/reality-check/REALITY_CHECK_05_ENTERPRISE_GOVERNANCE.md) | SCPs at OU level — Security OU could bypass its own controls |
+| 6 | [SOAR Automation](./docs/reality-check/REALITY_CHECK_06_SOAR_AUTOMATION.md) | `sys.exit()` inside library functions made all unit tests impossible |
+| 7 | [DFIR Investigation](./docs/reality-check/REALITY_CHECK_07_DFIR_INVESTIGATION.md) | 46-minute manual containment window — attacker completed all objectives before block |
+| 8 | [KubeScale Platform](./docs/reality-check/REALITY_CHECK_08_KUBESCALE_PLATFORM.md) | OOMKill from missing resource limits caused noisy-neighbour cascading failures |
+| 9 | [DevSecOps Pipeline](./docs/reality-check/REALITY_CHECK_09_DEVSECOPS_PIPELINE.md) | `trivy-action@0.28.0` tag didn't exist — security gate silently not running |
+
+**[→ Full Reality Check Documentation](./docs/reality-check/)**
 
 ---
 
