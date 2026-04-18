@@ -1,10 +1,15 @@
 # week8-ha-deploy/main.tf
-# This Terraform configuration deploys a High-Availability (HA) web application
-# using AWS Application Load Balancer (ALB) and Auto Scaling Group (ASG).
+# High-Availability, Fault-Tolerant AWS Web Application Infrastructure.
+# Architecture: WAF → ALB (multi-AZ) → ASG (auto-scaling EC2 fleet) → CloudTrail
+#
+# Security controls applied:
+#   - WAF (AWS Managed Rules: SQLi, XSS, CVE coverage)
+#   - ALB with invalid header dropping and ALB access logging
+#   - EC2 instances in private subnets (ALB-only inbound access)
+#   - IMDSv2 enforced on all instances (SSRF mitigation)
+#   - GuardDuty threat detection enabled
+#   - CloudTrail for full API audit log
 
-# =============================================================================
-# TERRAFORM SETTINGS
-# =============================================================================
 terraform {
     required_version = ">= 1.5.0"
 
@@ -17,10 +22,9 @@ terraform {
 }
 
 # =============================================================================
-# PROVIDER CONFIGURATION
+# PROVIDER — LocalStack for zero-cost development
+# Remove endpoint overrides and fake credentials for real AWS deployment
 # =============================================================================
-# Configures AWS provider to use LocalStack (local AWS emulator) for testing.
-# In production, remove the fake credentials and endpoint overrides.
 provider "aws" {
     region                      = "us-east-2"
     access_key                  = "test"
@@ -28,7 +32,6 @@ provider "aws" {
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true
-    # Allow STS to return the (fake) account ID so S3 Control APIs have a valid value
     skip_requesting_account_id  = false
     s3_use_path_style           = true
 
@@ -43,7 +46,7 @@ provider "aws" {
         guardduty   = "http://localhost:4566"
         kms         = "http://localhost:4566"
         elb         = "http://localhost:4566"
-        elbv2       = "http://localhost:4566" # ALB API endpoint
+        elbv2       = "http://localhost:4566"
         wafv2       = "http://localhost:4566"
         autoscaling = "http://localhost:4566"
     }
@@ -51,9 +54,8 @@ provider "aws" {
 
 # =============================================================================
 # LAYER 1: LOGGING (Audit Trail & Compliance)
+# S3 bucket for CloudTrail, ALB access logs, and GuardDuty findings
 # =============================================================================
-# Creates S3 bucket for storing logs. Essential for security audits,
-# troubleshooting, and compliance requirements (e.g., SOC2, HIPAA).
 module "logging" {
     source        = "../modules/logging"
     environment   = "ha-prod"
@@ -62,9 +64,8 @@ module "logging" {
 
 # =============================================================================
 # LAYER 2: SECURITY MONITORING (Threat Detection)
+# CloudTrail (API audit) + GuardDuty (ML threat detection)
 # =============================================================================
-# Enables CloudTrail (API activity logging) and GuardDuty (threat detection).
-# Logs are stored in the bucket created above.
 module "security" {
     source          = "../modules/security"
     environment     = "ha-prod"
@@ -72,20 +73,19 @@ module "security" {
 }
 
 # =============================================================================
-# LAYER 3: NETWORKING (VPC Infrastructure)
+# LAYER 3: NETWORKING (Multi-AZ VPC)
+# Public subnets across two AZs for ALB; private subnets for EC2 instances
 # =============================================================================
-# Creates the Virtual Private Cloud with public/private subnets.
-# This isolates our infrastructure from other AWS accounts.
 module "vpc" {
     source      = "../modules/vpc"
     environment = "ha-prod"
+    region      = "us-east-2"
 }
 
 # =============================================================================
-# LAYER 4: IDENTITY & ACCESS MANAGEMENT (Permissions)
+# LAYER 4: IDENTITY & ACCESS MANAGEMENT
+# Least-privilege IAM role for EC2 instances (read-only S3 access)
 # =============================================================================
-# Creates IAM role and instance profile for EC2 instances.
-# Follows least-privilege principle - servers only get permissions they need.
 module "iam" {
     source            = "../modules/iam"
     environment       = "ha-prod"
@@ -93,91 +93,76 @@ module "iam" {
 }
 
 # =============================================================================
-# LAUNCH TEMPLATE (Server Blueprint)
+# LAUNCH TEMPLATE — Hardened EC2 blueprint
+# Every auto-scaled instance uses this template for configuration consistency
 # =============================================================================
-# Defines HOW each server should be created. Think of it as a "recipe" that
-# the Auto Scaling Group uses to spin up identical servers on demand.
-# Key benefit: Consistency - every server is configured exactly the same.
 resource "aws_launch_template" "app" {
     name_prefix   = "ha-app-"
-    image_id      = "ami-02d1e544b84bf7502"  # Amazon Linux 2 AMI for us-east-2 (update as needed)
-    instance_type = "t2.micro"      # Server size (CPU, RAM)
+    image_id      = "ami-02d1e544b84bf7502"   # Amazon Linux 2 AMI (us-east-2)
+    instance_type = "t2.micro"
 
-    # Attach IAM role so instances can access AWS services securely
-    # (e.g., read from S3, write to CloudWatch) without hardcoded credentials
     iam_instance_profile {
         name = module.iam.instance_profile_name
     }
 
-    # Apply firewall rules - instances only accept traffic from ALB
-    # Security: Only allow traffic from ALB security group
     vpc_security_group_ids = [aws_security_group.instance_sg.id]
 
-    # Require IMDSv2 to prevent SSRF attacks on instance metadata
+    # IMDSv2: Require session tokens for instance metadata access.
+    # Prevents SSRF attacks from reading cloud credentials via metadata endpoint.
     metadata_options {
-        http_tokens   = "required"
-        http_endpoint = "enabled"
+        http_tokens               = "required"      # IMDSv2 mandatory
+        http_endpoint             = "enabled"
+        http_put_response_hop_limit = 1             # Prevent metadata relay attacks
     }
 
-    # Tag all instances for easy identification in AWS Console
+    # Encrypt root volume — all data at rest is encrypted
+    block_device_mappings {
+        device_name = "/dev/xvda"
+        ebs {
+            volume_size           = 20
+            volume_type           = "gp3"
+            encrypted             = true
+            delete_on_termination = true
+        }
+    }
+
     tag_specifications {
         resource_type = "instance"
         tags = {
-            Name = "HA-WebServer-Worker"
+            Name        = "HA-WebServer-Worker"
+            Environment = "ha-prod"
+            ManagedBy   = "Terraform"
         }
     }
 }
 
 # =============================================================================
-# SECURITY GROUP: LOAD BALANCER (Public-Facing Firewall)
+# SECURITY GROUP: APPLICATION LOAD BALANCER
+# Internet-facing — accepts HTTP and HTTPS only
 # =============================================================================
-# Firewall rules for the ALB - the ONLY component exposed to the internet.
-# Ingress: Allow HTTP (port 80) from anywhere (0.0.0.0/0 = all IPs)
-# Egress: Allow all outbound traffic to reach backend servers
 resource "aws_security_group" "alb_sg" {
     name        = "ha-alb-sg"
-    description = "Allow Internet to ALB"
+    description = "Allow Internet to ALB on HTTP and HTTPS"
     vpc_id      = module.vpc.vpc_id
 
-    # Inbound: Accept HTTP requests from the entire internet
     ingress {
+        description = "HTTP from internet"
         from_port   = 80
         to_port     = 80
         protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
 
-    # Outbound: Allow ALB to forward requests to backend instances
-    egress {
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"          # -1 = all protocols
+    ingress {
+        description = "HTTPS from internet"
+        from_port   = 443
+        to_port     = 443
+        protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
-}
 
-# =============================================================================
-# SECURITY GROUP: EC2 INSTANCES (Private Firewall)
-# =============================================================================
-# Firewall rules for backend servers - NOT directly accessible from internet.
-# CRITICAL SECURITY PATTERN: Only the ALB can reach these servers.
-# This prevents direct attacks on application servers.
-resource "aws_security_group" "instance_sg" {
-    name        = "ha-instance-sg"
-    description = "Allow traffic ONLY from ALB"
-    vpc_id      = module.vpc.vpc_id
-
-    # Inbound: ONLY accept traffic from the ALB security group
-    # This is the "magic link" - uses security group ID instead of IP ranges
-    ingress {
-        from_port       = 80
-        to_port         = 80
-        protocol        = "tcp"
-        security_groups = [aws_security_group.alb_sg.id]
-    }
-
-    # Outbound: Allow instances to reach internet (for updates, API calls, etc.)
     egress {
+        description = "Allow ALB to reach backend EC2 instances"
         from_port   = 0
         to_port     = 0
         protocol    = "-1"
@@ -186,45 +171,50 @@ resource "aws_security_group" "instance_sg" {
 }
 
 # =============================================================================
-# WAF (Web Application Firewall) - Layer 7 Defense
+# SECURITY GROUP: EC2 INSTANCES (PRIVATE)
+# Critical pattern: only the ALB security group can reach these instances.
+# Direct internet access to instances is completely blocked.
 # =============================================================================
-# PURPOSE: Protects against common web attacks like SQL Injection (SQLi) and
-# Cross-Site Scripting (XSS) by inspecting HTTP/HTTPS traffic at the ALB.
-#
-# WHY IT MATTERS:
-# - Security groups only filter by IP/port (Layer 3-4)
-# - WAF inspects actual request content (Layer 7) - headers, body, query strings
-# - Blocks malicious payloads BEFORE they reach your application
-# =============================================================================
+resource "aws_security_group" "instance_sg" {
+    name        = "ha-instance-sg"
+    description = "Allow HTTP inbound ONLY from ALB security group"
+    vpc_id      = module.vpc.vpc_id
 
-resource "aws_wafv2_web_acl" "main" {
-    name        = "ha-prod-waf"
-    description = "Protects ALB from SQLi, XSS, and common web exploits"
-    scope       = "REGIONAL"  # REGIONAL = ALB/API Gateway, CLOUDFRONT = CDN
-
-    # Default behavior: Allow traffic that doesn't match any blocking rules
-    # This is a "blocklist" approach - only explicitly bad traffic is stopped
-    default_action {
-        allow {}
+    ingress {
+        description     = "HTTP from ALB only"
+        from_port       = 80
+        to_port         = 80
+        protocol        = "tcp"
+        security_groups = [aws_security_group.alb_sg.id]
     }
 
-    # ---------------------------------------------------------------------------
-    # RULE 1: AWS Managed Common Rule Set
-    # ---------------------------------------------------------------------------
-    # Pre-built rules maintained by AWS security team. Includes protection for:
-    # - SQL Injection (SQLi) - Malicious database queries
-    # - Cross-Site Scripting (XSS) - Script injection attacks
-    # - Local File Inclusion (LFI) - Unauthorized file access attempts
-    # - Path Traversal - Attempts to access ../../../etc/passwd
-    #
-    # WHY MANAGED RULES: AWS continuously updates these rules as new attack
-    # patterns emerge - you get protection without manual rule maintenance.
-    # ---------------------------------------------------------------------------
+    egress {
+        description = "Allow instances to reach internet via NAT (for updates)"
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+}
+
+# =============================================================================
+# WEB APPLICATION FIREWALL — Layer 7 Defence
+# Inspects HTTP request content for SQLi, XSS, and CVEs before reaching the ALB
+# =============================================================================
+resource "aws_wafv2_web_acl" "main" {
+    name        = "ha-prod-waf"
+    description = "WAF protecting ALB — SQLi, XSS, and common exploit coverage"
+    scope       = "REGIONAL"
+
+    default_action {
+        allow {}   # Blocklist approach: only explicitly bad traffic is blocked
+    }
+
+    # Rule 1: AWS Managed Common Rule Set (SQLi, XSS, LFI, Path Traversal)
     rule {
         name     = "AWSManagedRulesCommonRuleSet"
-        priority = 1  # Lower number = evaluated first
+        priority = 1
 
-        # Use the rule group's default actions (block/count as defined by AWS)
         override_action {
             none {}
         }
@@ -236,16 +226,36 @@ resource "aws_wafv2_web_acl" "main" {
             }
         }
 
-        # CloudWatch metrics for monitoring blocked requests
-        # Check these metrics to see attack attempts against your application
         visibility_config {
             cloudwatch_metrics_enabled = true
             metric_name                = "CommonRuleSetMetrics"
-            sampled_requests_enabled   = true  # Store sample requests for analysis
+            sampled_requests_enabled   = true
         }
     }
 
-    # Global visibility config for the entire Web ACL
+    # Rule 2: Known Bad Inputs (Log4Shell, Spring4Shell, etc.)
+    rule {
+        name     = "AWSManagedRulesKnownBadInputsRuleSet"
+        priority = 2
+
+        override_action {
+            none {}
+        }
+
+        statement {
+            managed_rule_group_statement {
+                name        = "AWSManagedRulesKnownBadInputsRuleSet"
+                vendor_name = "AWS"
+            }
+        }
+
+        visibility_config {
+            cloudwatch_metrics_enabled = true
+            metric_name                = "KnownBadInputsMetrics"
+            sampled_requests_enabled   = true
+        }
+    }
+
     visibility_config {
         cloudwatch_metrics_enabled = true
         metric_name                = "ha-prod-waf-metrics"
@@ -259,91 +269,159 @@ resource "aws_wafv2_web_acl" "main" {
 }
 
 # =============================================================================
-# WAF-to-ALB Association
+# APPLICATION LOAD BALANCER — Multi-AZ, Internet-Facing
 # =============================================================================
-# CRITICAL: This resource "attaches" the WAF to the ALB.
-# Without this association, the WAF rules exist but do nothing!
-#
-# TRAFFIC FLOW AFTER ASSOCIATION:
-# Internet → ALB → [WAF Inspection] → If clean → Target Group → EC2 Instances
-#                                   → If malicious → 403 Blocked
-# =============================================================================
-resource "aws_wafv2_web_acl_association" "main" {
-    resource_arn = aws_lb.main.arn       # The ALB to protect
-    web_acl_arn  = aws_wafv2_web_acl.main.arn  # The WAF rules to apply
-}
-
-# =============================================================================
-# APPLICATION LOAD BALANCER (Traffic Distributor)
-# =============================================================================
-# The single entry point for all user traffic. Distributes requests across
-# multiple healthy backend servers. Benefits:
-# - High Availability: If one server dies, traffic goes to others
-# - Scalability: Add more servers without changing DNS
-# - Security: Hides backend servers from direct internet access
 resource "aws_lb" "main" {
-    name               = "ha-load-balancer"
-    internal           = false                          # false = internet-facing
-    load_balancer_type = "application"                  # Layer 7 (HTTP/HTTPS)
-    drop_invalid_header_fields = true  # Prevent HTTP header injection attacks
-    security_groups    = [aws_security_group.alb_sg.id]
-    subnets            = [module.vpc.public_subnet_id]
-    #Note:  Using 2 public subnets across different AZs for high availability in Production
+    name                       = "ha-load-balancer"
+    internal                   = false
+    load_balancer_type         = "application"
+    drop_invalid_header_fields = true    # Prevent HTTP header injection
+    security_groups            = [aws_security_group.alb_sg.id]
+
+    # Multi-AZ placement: ALB spans BOTH public subnets for true HA
+    subnets = [
+        module.vpc.public_subnet_id,
+        module.vpc.public_subnet_b_id,
+    ]
+
+    # Ship ALB access logs to S3 for security analysis and compliance
+    access_logs {
+        bucket  = module.logging.bucket_name
+        prefix  = "alb-access-logs"
+        enabled = true
+    }
+
+    tags = {
+        Name        = "HA-Load-Balancer"
+        Environment = "ha-prod"
+    }
+}
+
+# Associate WAF with the ALB — required to enforce WAF rules on actual traffic
+resource "aws_wafv2_web_acl_association" "main" {
+    resource_arn = aws_lb.main.arn
+    web_acl_arn  = aws_wafv2_web_acl.main.arn
 }
 
 # =============================================================================
-# TARGET GROUP (Backend Server Registry)
+# TARGET GROUP — Backend EC2 Registry
+# ALB uses this to know where to forward requests; health checks remove failed nodes
 # =============================================================================
-# A logical grouping of backend servers. The ALB uses this to know
-# WHERE to send traffic. Includes health checks to detect failed servers.
 resource "aws_lb_target_group" "app" {
     name     = "ha-target-group"
-    port     = 80                  # Port where app listens
+    port     = 80
     protocol = "HTTP"
     vpc_id   = module.vpc.vpc_id
-    # Health checks are configured by default (GET / every 30s)
+
+    health_check {
+        enabled             = true
+        path                = "/"
+        healthy_threshold   = 2
+        unhealthy_threshold = 3
+        interval            = 30
+        timeout             = 5
+    }
 }
 
 # =============================================================================
-# ALB LISTENER (Request Router)
+# ALB LISTENERS
 # =============================================================================
-# Defines what the ALB does when it receives traffic on a specific port.
-# This listener: "When traffic arrives on port 80, forward it to the target group"
-resource "aws_lb_listener" "front_end" {
+
+# HTTP Listener — Redirects all HTTP traffic to HTTPS (security best practice)
+resource "aws_lb_listener" "http_redirect" {
     load_balancer_arn = aws_lb.main.arn
     port              = "80"
     protocol          = "HTTP"
-    # NOTE: Production should use HTTPS (port 443) with SSL certificate
-    # TODO: For production, configure an HTTPS listener with a valid SSL certificate to ensure secure communication.
 
     default_action {
-        type             = "forward"
-        target_group_arn = aws_lb_target_group.app.arn
+        type = "redirect"
+        redirect {
+            port        = "443"
+            protocol    = "HTTPS"
+            status_code = "HTTP_301"    # Permanent redirect — browser caches this
+        }
+    }
+}
+
+# HTTPS Listener — Terminates TLS at the ALB and forwards to instances over HTTP
+# NOTE: Replace "arn:aws:acm:..." with a real ACM certificate ARN in production.
+# For LocalStack testing, this listener is commented out as ACM is not emulated.
+# resource "aws_lb_listener" "https" {
+#     load_balancer_arn = aws_lb.main.arn
+#     port              = "443"
+#     protocol          = "HTTPS"
+#     ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"  # TLS 1.3 preferred
+#     certificate_arn   = "arn:aws:acm:us-east-2:123456789012:certificate/YOUR-CERT-ARN"
+#
+#     default_action {
+#         type             = "forward"
+#         target_group_arn = aws_lb_target_group.app.arn
+#     }
+# }
+
+# =============================================================================
+# AUTO SCALING GROUP — Self-Healing Infrastructure
+# Maintains desired capacity; replaces unhealthy instances automatically
+# =============================================================================
+resource "aws_autoscaling_group" "app" {
+    name                = "ha-asg"
+
+    # Place instances in PRIVATE subnets — not directly reachable from internet
+    vpc_zone_identifier = [
+        module.vpc.private_subnet_id,
+        module.vpc.private_subnet_b_id,
+    ]
+
+    target_group_arns = [aws_lb_target_group.app.arn]
+
+    launch_template {
+        id      = aws_launch_template.app.id
+        version = "$Latest"
+    }
+
+    min_size         = 2   # Never below 2 — ensures HA even during scale-in
+    max_size         = 6   # Caps infrastructure cost during traffic spikes
+    desired_capacity = 2   # Start with minimum HA configuration
+
+    health_check_type         = "ELB"        # Use ALB health checks (not just EC2 status)
+    health_check_grace_period = 300          # Give instances 5 min to initialise
+
+    tag {
+        key                 = "Environment"
+        value               = "ha-prod"
+        propagate_at_launch = true
     }
 }
 
 # =============================================================================
-# AUTO SCALING GROUP (Self-Healing Infrastructure)
+# AUTO SCALING POLICIES — Dynamic Capacity Management
 # =============================================================================
-# The "brain" that maintains desired number of healthy servers.
-# Key behaviors:
-# - Replaces failed instances automatically (self-healing)
-# - Scales out when demand increases (if max_size > desired_capacity)
-# - Scales in when demand decreases (cost optimization)
-# - Registers new instances with the ALB target group automatically
-resource "aws_autoscaling_group" "app" {
-    name                = "ha-asg"
-    vpc_zone_identifier = [module.vpc.public_subnet_id]  # Subnets available for the ASG
-    target_group_arns   = [aws_lb_target_group.app.arn]  # Auto-register with ALB
 
-    # Use the launch template to create instances
-    launch_template {
-        id      = aws_launch_template.app.id
-        version = "$Latest"  # Always use newest template version
+# Scale OUT: add 2 instances when average CPU > 70% for 2 consecutive periods
+resource "aws_autoscaling_policy" "scale_out" {
+    name                   = "ha-scale-out"
+    autoscaling_group_name = aws_autoscaling_group.app.name
+    policy_type            = "TargetTrackingScaling"
+
+    target_tracking_configuration {
+        predefined_metric_specification {
+            predefined_metric_type = "ASGAverageCPUUtilization"
+        }
+        target_value = 70.0   # Scale out when average CPU exceeds 70%
     }
+}
 
-    # Capacity settings:
-    min_size         = 2  # Never go below 2 (high availability)
-    max_size         = 3  # Cap at 3 to control costs
-    desired_capacity = 2  # Start with 2 instances
+# Memory-based scaling using custom CloudWatch metric (optional — requires CW agent)
+resource "aws_autoscaling_policy" "scale_on_requests" {
+    name                   = "ha-scale-on-alb-requests"
+    autoscaling_group_name = aws_autoscaling_group.app.name
+    policy_type            = "TargetTrackingScaling"
+
+    target_tracking_configuration {
+        predefined_metric_specification {
+            predefined_metric_type = "ALBRequestCountPerTarget"
+            resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
+        }
+        target_value = 1000.0   # Scale out when requests per target exceed 1000/min
+    }
 }

@@ -1,0 +1,13 @@
+# terraform.tfvars.example
+# Copy to terraform.tfvars and fill in environment-specific values.
+# This file is safe to commit — it contains no secrets.
+
+# For LocalStack (default): leave all defaults as-is and run docker-compose up first.
+# For real AWS: remove LocalStack endpoint overrides from main.tf and set real credentials
+#               via AWS CLI profiles or environment variables (never hardcode them).
+
+# No variables required for week5 local deploy — all defaults are pre-configured.
+# Uncomment and override as needed:
+
+# vpc_cidr = "10.0.0.0/16"
+# environment = "local"

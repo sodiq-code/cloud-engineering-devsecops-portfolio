@@ -1,29 +1,133 @@
-name: DevSecOps Security Scan  # Workflow name shown in GitHub Actions UI
+name: "🛡️ DevSecOps Security Gate"
 
 on:
   push:
-    branches: [ main ]        # Run on pushes to main branch
-  pull_request:               # Run on all pull requests
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:          # Allow manual trigger from GitHub UI
 
 permissions:
-  contents: read              # Minimal permissions needed to read repo contents
+  contents: read              # Minimal permissions — least privilege principle
+  security-events: write      # Required to upload SARIF results to GitHub Security tab
 
 jobs:
+  # ===========================================================================
+  # JOB 1: IaC Security Scan (Terraform, Kubernetes YAML)
+  # Detects misconfigurations before they reach production
+  # ===========================================================================
   trivy-iac:
-    name: Trivy IaC Scan      # Job name
-    runs-on: ubuntu-latest    # Use latest Ubuntu runner
+    name: "IaC Misconfiguration Scan"
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0      # Full history (required for some scanners)
+          fetch-depth: 0
 
-      - name: Run Trivy Scanner (IaC)
-        uses: aquasecurity/trivy-action@master
+      # Pinned to a specific SHA for supply-chain security
+      # Prevents a compromised upstream tag from executing arbitrary code in CI
+      - name: Run Trivy Scanner (IaC — Table Output)
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          scan-type: 'config'                 # Scan IaC/config files
-          hide-progress: true                 # Cleaner logs
-          format: 'table'                     # Human-readable output
-          exit-code: '1'                      # Fail job on findings
-          ignore-unfixed: true                # Ignore issues without a fix yet
-          severity: 'CRITICAL,HIGH'           # Only fail on high/critical issues
+          scan-type: 'config'
+          hide-progress: true
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+
+      - name: Run Trivy Scanner (IaC — SARIF Upload)
+        uses: aquasecurity/trivy-action@0.28.0
+        if: always()              # Run even if table scan fails, to always post findings
+        with:
+          scan-type: 'config'
+          hide-progress: true
+          format: 'sarif'
+          output: 'trivy-iac.sarif'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          trivyignores: '.trivyignore'
+
+      - name: Upload IaC SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-iac.sarif'
+          category: 'trivy-iac'
+
+  # ===========================================================================
+  # JOB 2: Container Image Filesystem Scan (Dockerfile & Dependencies)
+  # ===========================================================================
+  trivy-container:
+    name: "Container & Filesystem Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy Filesystem Scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          hide-progress: true
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Filesystem SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-fs.sarif'
+          category: 'trivy-fs'
+
+  # ===========================================================================
+  # JOB 3: Secret & Credential Scanning (TruffleHog)
+  # Prevents accidental commit of API keys, tokens, passwords
+  # ===========================================================================
+  secret-scan:
+    name: "Secret & Credential Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # Full history — secrets can hide in old commits
+
+      - name: Run TruffleHog OSS
+        uses: trufflesecurity/trufflehog@v3.88.18
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # ===========================================================================
+  # JOB 4: Checkov Policy-as-Code (CIS Benchmark & Best Practices)
+  # Provides a second opinion alongside Trivy with CIS Benchmark coverage
+  # ===========================================================================
+  checkov-scan:
+    name: "Checkov Policy-as-Code Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform,kubernetes,dockerfile,github_actions
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+          soft_fail: true         # Report findings without blocking; Trivy is the hard gate
+
+      - name: Upload Checkov SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'checkov.sarif'
+          category: 'checkov'

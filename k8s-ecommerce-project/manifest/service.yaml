@@ -1,12 +1,18 @@
+# Email Service — ClusterIP Service
+# Internal-only endpoint; accessible only by other pods in the cluster.
 apiVersion: v1
 kind: Service
 metadata:
-  name: email-service-svc
+  name: email-service
+  namespace: ecommerce
+  labels:
+    app: email-service
 spec:
   selector:
-    app: email-service # <--- This "points" the Service to our Pods
+    app: email-service
   ports:
-    - protocol: TCP
-      port: 80 # <--- The port other apps inside the cluster will use
-      targetPort: 8080 # <--- The port our Python app is actually listening on
-  type: ClusterIP # <--- Means this is only accessible "inside" the cluster
+    - name: http
+      protocol: TCP
+      port: 8080                         # Port other services call
+      targetPort: http                   # Named port from the Deployment container spec
+  type: ClusterIP                        # Internal only — no NodePort or LoadBalancer exposure

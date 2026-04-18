@@ -1,124 +1,317 @@
-import boto3
+"""
+auto_remediate_nacl.py — Automated Network ACL Remediation (SOAR)
+
+Reduces Time-to-Containment from minutes (manual) to milliseconds (automated).
+Designed to be invoked by AWS Lambda in production, triggered by GuardDuty findings
+via EventBridge. Can also be executed manually for ad-hoc remediation.
+
+Production flow:
+    GuardDuty Finding → EventBridge Rule → Lambda (this script) → NACL DENY Rule
+
+Usage:
+    python auto_remediate_nacl.py --ip 203.0.113.5/32
+    python auto_remediate_nacl.py --ip 203.0.113.5/32 --dry-run
+    python auto_remediate_nacl.py --ip 203.0.113.5/32 --rule-number 50
+    python auto_remediate_nacl.py --cleanup --ip 203.0.113.5/32
+"""
+
+import argparse
+import logging
 import sys
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+# =============================================================================
+# LOGGING — structured output for both CLI and Lambda CloudWatch consumption
+# =============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-# LocalStack endpoint - a local AWS simulator for development/testing
-# This avoids costs and allows safe experimentation without affecting real AWS
-AWS_REGION = "us-east-2"
-ENDPOINT_URL = "http://localhost:4566"
+AWS_REGION    = "us-east-2"
+ENDPOINT_URL  = "http://localhost:4566"   # LocalStack endpoint for local dev
 
-# CIDR notation: /32 means a single IP address (full 32-bit mask)
-MALICIOUS_IP = "203.0.113.5/32"
 
 # =============================================================================
-# SETUP CONNECTION
+# CUSTOM EXCEPTIONS — avoids sys.exit() anti-pattern inside library functions
 # =============================================================================
-print(f"🔄 Connecting to LocalStack in {AWS_REGION}...")
+class VPCNotFoundError(Exception):
+    """Raised when no VPC exists in the target account."""
 
-# boto3.client creates a low-level service client for EC2
-# EC2 client handles VPC, subnets, security groups, NACLs, and instances
-ec2 = boto3.client(
-    'ec2',
-    region_name=AWS_REGION,
-    endpoint_url=ENDPOINT_URL,
-    # LocalStack accepts any credentials - "test" is conventional
-    aws_access_key_id="test",
-    aws_secret_access_key="test"
-)
+class NACLNotFoundError(Exception):
+    """Raised when no NACL is associated with the target VPC."""
 
-def find_vpc_id():
-    """
-    Retrieves the first VPC ID from the AWS account.
-    
-    A VPC (Virtual Private Cloud) is an isolated network environment.
-    All network resources (subnets, NACLs, instances) belong to a VPC.
-    """
-    try:
-        response = ec2.describe_vpcs()
-        
-        if response['Vpcs']:
-            vpc_id = response['Vpcs'][0]['VpcId']
-            print(f"✅ Found Target VPC: {vpc_id}")
-            return vpc_id
-        else:
-            print("❌ No VPC found! Did you run 'terraform apply' in Week 8?")
-            sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error finding VPC: {e}")
-        sys.exit(1)
+class RuleConflictError(Exception):
+    """Raised when the target rule number is already in use."""
 
-def find_nacl_id(vpc_id):
+
+# =============================================================================
+# AWS CLIENT FACTORY
+# =============================================================================
+def get_ec2_client(region: str = AWS_REGION, endpoint_url: str = ENDPOINT_URL) -> boto3.client:
     """
-    Finds the Network ACL associated with a VPC.
-    
-    NACL = Network Access Control List
-    - Operates at the subnet level (stateless firewall)
-    - Rules are evaluated in order by rule number (lowest first)
-    - Unlike Security Groups, NACLs require explicit allow/deny for both directions
+    Create a boto3 EC2 client.
+
+    In production (Lambda), credentials come from the execution role — no
+    hardcoded keys. The endpoint_url is omitted in production.
     """
-    try:
-        # Filter NACLs to only those belonging to our target VPC
-        response = ec2.describe_network_acls(
-            Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}]
+    return boto3.client(
+        "ec2",
+        region_name=region,
+        endpoint_url=endpoint_url,
+        aws_access_key_id="test",      # LocalStack accepts any value
+        aws_secret_access_key="test",  # Remove hardcoded creds in production
+    )
+
+
+# =============================================================================
+# DISCOVERY FUNCTIONS
+# =============================================================================
+def find_vpc_id(ec2: boto3.client) -> str:
+    """
+    Retrieve the first VPC ID in the account.
+
+    Returns:
+        str: VPC ID (e.g., "vpc-abc123")
+
+    Raises:
+        VPCNotFoundError: if no VPCs exist
+        ClientError: on AWS API failure
+    """
+    logger.info("Querying EC2 API for VPC list...")
+    response = ec2.describe_vpcs()
+
+    vpcs = response.get("Vpcs", [])
+    if not vpcs:
+        raise VPCNotFoundError(
+            "No VPC found. Ensure Terraform has been applied in week8-ha-deploy."
         )
-        
-        if response['NetworkAcls']:
-            nacl_id = response['NetworkAcls'][0]['NetworkAclId']
-            print(f"✅ Found Network ACL: {nacl_id}")
-            return nacl_id
-        else:
-            print("❌ No Network ACL found for this VPC.")
-            sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error finding NACL: {e}")
-        sys.exit(1)
 
-def block_ip(nacl_id, ip_address):
+    vpc_id = vpcs[0]["VpcId"]
+    logger.info("Target VPC identified: %s", vpc_id)
+    return vpc_id
+
+
+def find_nacl_id(ec2: boto3.client, vpc_id: str) -> str:
     """
-    Creates a DENY rule in the NACL to block all traffic from a specific IP.
-    
-    This is an automated remediation action - typically triggered by:
-    - Intrusion detection systems (IDS)
-    - Security incident alerts
-    - Threat intelligence feeds
+    Retrieve the Network ACL associated with the given VPC.
+
+    NACL operates at subnet level (stateless). Rules are evaluated in ascending
+    order — lowest rule number wins. We inject at rule #1 for highest priority.
+
+    Returns:
+        str: Network ACL ID (e.g., "acl-abc123")
+
+    Raises:
+        NACLNotFoundError: if no NACL is found for the VPC
     """
-    print(f"🛡️  Attempting to BLOCK malicious IP: {ip_address}...")
-    
-    try:
-        response = ec2.create_network_acl_entry(
-            NetworkAclId=nacl_id,
-            # RuleNumber=1: Lowest number = highest priority
-            # NACL rules are evaluated in ascending order; first match wins
-            RuleNumber=1,
-            # Protocol '-1' = all protocols (TCP, UDP, ICMP, etc.)
-            # Use '6' for TCP-only or '17' for UDP-only
-            Protocol='-1',
-            RuleAction='deny',
-            # Egress=False means INBOUND (ingress) traffic
-            # Egress=True would block OUTBOUND traffic from our network
-            Egress=False,
-            CidrBlock=ip_address,
-            # Port range 0-65535 covers all possible ports
-            # Only applicable when Protocol is TCP (6) or UDP (17)
-            PortRange={'From': 0, 'To': 65535}
+    logger.info("Searching for NACL in VPC %s...", vpc_id)
+    response = ec2.describe_network_acls(
+        Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+    )
+
+    nacls = response.get("NetworkAcls", [])
+    if not nacls:
+        raise NACLNotFoundError(f"No Network ACL found for VPC {vpc_id}.")
+
+    nacl_id = nacls[0]["NetworkAclId"]
+    logger.info("Network ACL identified: %s", nacl_id)
+    return nacl_id
+
+
+def rule_exists(ec2: boto3.client, nacl_id: str, rule_number: int) -> bool:
+    """
+    Check whether a rule with the given number already exists in the NACL.
+
+    Prevents duplicate-rule errors on repeated executions of this script.
+    """
+    response = ec2.describe_network_acls(NetworkAclIds=[nacl_id])
+    entries = response["NetworkAcls"][0].get("Entries", [])
+    return any(e["RuleNumber"] == rule_number and not e["Egress"] for e in entries)
+
+
+# =============================================================================
+# REMEDIATION FUNCTIONS
+# =============================================================================
+def block_ip(
+    ec2: boto3.client,
+    nacl_id: str,
+    ip_cidr: str,
+    rule_number: int = 1,
+    dry_run: bool = False,
+) -> None:
+    """
+    Inject a DENY rule into the NACL to block all traffic from ip_cidr.
+
+    Args:
+        ec2:         boto3 EC2 client
+        nacl_id:     Target Network ACL ID
+        ip_cidr:     IP address in CIDR notation (e.g., "203.0.113.5/32")
+        rule_number: NACL rule number (lower = higher priority, evaluated first)
+        dry_run:     If True, log the action but do not create the rule
+
+    Raises:
+        RuleConflictError: if the rule number is already in use
+    """
+    if rule_exists(ec2, nacl_id, rule_number):
+        raise RuleConflictError(
+            f"Rule #{rule_number} already exists in NACL {nacl_id}. "
+            "Use --rule-number to specify a different number, or --cleanup first."
         )
-        print("✅ SUCCESS! IP Address blocked.")
-        print(f"🚫 Rule created: DENY ALL from {ip_address} (Priority 1)")
-        
-    except Exception as e:
-        print(f"❌ Failed to block IP: {e}")
+
+    logger.info(
+        "Preparing DENY rule #%d for IP %s in NACL %s (dry_run=%s)",
+        rule_number, ip_cidr, nacl_id, dry_run,
+    )
+
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would create: DENY ALL from %s (Rule #%d, NACL %s) — no changes made.",
+            ip_cidr, rule_number, nacl_id,
+        )
+        return
+
+    ec2.create_network_acl_entry(
+        NetworkAclId=nacl_id,
+        RuleNumber=rule_number,
+        Protocol="-1",      # All protocols (TCP, UDP, ICMP)
+        RuleAction="deny",
+        Egress=False,       # Inbound traffic block
+        CidrBlock=ip_cidr,
+        PortRange={"From": 0, "To": 65535},
+    )
+    logger.info("SUCCESS — Rule created: DENY ALL inbound from %s (Priority #%d)", ip_cidr, rule_number)
+
+
+def cleanup_rule(
+    ec2: boto3.client,
+    nacl_id: str,
+    rule_number: int,
+    dry_run: bool = False,
+) -> None:
+    """
+    Remove a previously created DENY rule from the NACL.
+
+    Used when a threat is resolved and the block should be lifted.
+
+    Args:
+        ec2:         boto3 EC2 client
+        nacl_id:     Target Network ACL ID
+        rule_number: The rule number to remove
+        dry_run:     If True, log the action but do not delete the rule
+    """
+    if not rule_exists(ec2, nacl_id, rule_number):
+        logger.warning(
+            "Rule #%d not found in NACL %s — nothing to clean up.", rule_number, nacl_id
+        )
+        return
+
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would delete: Rule #%d from NACL %s — no changes made.",
+            rule_number, nacl_id,
+        )
+        return
+
+    ec2.delete_network_acl_entry(
+        NetworkAclId=nacl_id,
+        RuleNumber=rule_number,
+        Egress=False,
+    )
+    logger.info("SUCCESS — Rule #%d removed from NACL %s", rule_number, nacl_id)
+
 
 # =============================================================================
-# MAIN EXECUTION FLOW
+# CLI ARGUMENT PARSING
 # =============================================================================
-# __name__ == "__main__" ensures this only runs when executed directly,
-# not when imported as a module by another script
+def parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="SOAR: Automated NACL IP block/unblock tool",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Block a malicious IP:
+  python auto_remediate_nacl.py --ip 203.0.113.5/32
+
+  # Preview the action without making changes:
+  python auto_remediate_nacl.py --ip 203.0.113.5/32 --dry-run
+
+  # Block at a specific rule number (e.g., to avoid conflict):
+  python auto_remediate_nacl.py --ip 203.0.113.5/32 --rule-number 50
+
+  # Remove a previously created block:
+  python auto_remediate_nacl.py --cleanup --ip 203.0.113.5/32 --rule-number 1
+        """,
+    )
+    parser.add_argument(
+        "--ip",
+        required=True,
+        help="IP address to block/unblock in CIDR notation (e.g., 203.0.113.5/32)",
+    )
+    parser.add_argument(
+        "--rule-number",
+        type=int,
+        default=1,
+        help="NACL rule number to create or remove (default: 1 — highest priority)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the action without making any AWS API changes",
+    )
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove the DENY rule instead of creating one (incident resolved)",
+    )
+    return parser.parse_args(argv)
+
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+def main(argv=None) -> int:
+    """
+    Entry point for CLI and Lambda invocation.
+
+    Returns:
+        0 on success, 1 on error
+    """
+    args = parse_args(argv)
+
+    logger.info("Connecting to EC2 API in region %s...", AWS_REGION)
+    ec2 = get_ec2_client()
+
+    try:
+        vpc_id  = find_vpc_id(ec2)
+        nacl_id = find_nacl_id(ec2, vpc_id)
+
+        if args.cleanup:
+            cleanup_rule(ec2, nacl_id, args.rule_number, dry_run=args.dry_run)
+        else:
+            block_ip(ec2, nacl_id, args.ip, rule_number=args.rule_number, dry_run=args.dry_run)
+
+    except VPCNotFoundError as exc:
+        logger.error("VPC discovery failed: %s", exc)
+        return 1
+    except NACLNotFoundError as exc:
+        logger.error("NACL discovery failed: %s", exc)
+        return 1
+    except RuleConflictError as exc:
+        logger.error("Rule conflict: %s", exc)
+        return 1
+    except (BotoCoreError, ClientError) as exc:
+        logger.error("AWS API error: %s", exc)
+        return 1
+
+    return 0
+
+
 if __name__ == "__main__":
-    # Step 1: Discover existing infrastructure
-    my_vpc = find_vpc_id()
-    my_nacl = find_nacl_id(my_vpc)
-    
-    # Step 2: Apply security remediation by blocking the malicious IP
-    block_ip(my_nacl, MALICIOUS_IP)
+    sys.exit(main())

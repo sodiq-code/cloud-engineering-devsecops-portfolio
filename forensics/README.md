@@ -1,31 +1,157 @@
-#  Digital Forensics & Incident Response (DFIR)
-**Status:** ✅ Investigation Complete
+# 🔬 Digital Forensics & Incident Response (DFIR)
+**Status:** ✅ Investigation Complete | **Severity:** CRITICAL | **Classification:** Simulated Lab Exercise
+
+> ⚠️ **Disclaimer:** All log entries in `auth.log` are **synthetically generated** by `setup_victim.sh` for educational purposes only. No real systems were compromised.
+
+---
 
 ## 1. Overview
-This module simulates a **Compromised Linux Server** scenario to demonstrate forensic investigation skills. It focuses on identifying Indicators of Compromise (IoCs) from raw system logs rather than relying solely on dashboard alerts.
 
-**Scenario:** A web server has been breached via SSH Brute Force.
-**Goal:** Identify the attacker, the method of entry, and the post-compromise activity.
+This module simulates a full **Compromised Linux Server** forensic investigation — from initial breach detection through evidence collection, threat actor profiling, and remediation. It demonstrates professional DFIR techniques applicable to SOC Analyst (Tier 2/3) and Cloud Security Engineering roles.
 
-## 2. The Simulation (`setup_victim.sh`)
-I wrote a Bash script to generate a realistic "Crime Scene" by injecting fake log entries into `auth.log`.
-* **Attack Vectors Simulated:**
-    * SSH Brute Force (Noise)
-    * Successful Unauthorized Login (Breach)
-    * Privilege Escalation (`sudo` abuse)
-    * Persistence (Backdoor User Creation)
+**Scenario:** A production web server has been breached via an SSH Brute Force campaign.  
+**Goal:** Identify the attacker's IP, method of entry, post-compromise activity, and produce a formal Incident Report.
 
-## 3. Investigation & Findings
-Using Linux CLI tools (`grep`, `awk`, `tail`), I reconstructed the attack timeline.
+---
 
-| Phase | Evidence Found | Command Used |
+## 2. MITRE ATT&CK Framework Mapping
+
+All observed attacker behaviours are mapped to the [MITRE ATT&CK Enterprise Matrix](https://attack.mitre.org/) for structured threat intelligence.
+
+| Phase | ATT&CK Tactic | Technique | Sub-Technique | Evidence |
+| :--- | :--- | :--- | :--- | :--- |
+| **Reconnaissance** | Reconnaissance | T1595 — Active Scanning | T1595.002 — Vulnerability Scanning | 15 SSH probes from `192.168.1.50` |
+| **Initial Access** | Initial Access | T1110 — Brute Force | T1110.001 — Password Guessing | `Accepted password for admin` at 08:20:01 |
+| **Persistence** | Persistence | T1136 — Create Account | T1136.001 — Local Account | `useradd support_service UID=0` at 08:25:30 |
+| **Privilege Escalation** | Privilege Escalation | T1548 — Abuse Elevation | T1548.003 — Sudo and Sudo Caching | `sudo tar` executed as root |
+| **Exfiltration** | Exfiltration | T1560 — Archive Collected Data | T1560.001 — Archive via Utility | `/tmp/data_dump.tar.gz` created at 08:30:15 |
+
+---
+
+## 3. Investigation Methodology & Findings
+
+### 3.1 Initial Access — Brute Force Attack
+```bash
+# Count failed SSH attempts by source IP
+grep "Failed password" auth.log | awk '{print $11}' | sort | uniq -c | sort -rn
+```
+**Finding:** `192.168.1.50` made **15 failed attempts** between 08:00 and 08:15, a classic brute-force pattern.
+
+### 3.2 Successful Breach — Account Compromise
+```bash
+# Identify the moment of breach
+grep "Accepted" auth.log | awk '{print $1, $2, $3, $9, $11}'
+```
+**Finding:** At **08:20:01**, `admin` account was successfully authenticated from `192.168.1.50` — confirming password was guessed.
+
+### 3.3 Persistence — Backdoor Account Creation
+```bash
+# Detect new user account creation events
+grep "useradd" auth.log
+```
+**Finding:** Account `support_service` created with **UID=0** (root-level privileges) — a classic persistence technique used to maintain access even after password reset.
+
+### 3.4 Privilege Escalation & Data Exfiltration
+```bash
+# Identify privileged command execution
+grep "sudo" auth.log | awk '{print $1, $2, $3, $6, $NF}'
+```
+**Finding:** Attacker used `sudo` to execute `/bin/tar -czf /tmp/data_dump.tar.gz /var/www/html` — compressing and staging website data for exfiltration.
+
+### 3.5 Network Forensics — Suspicious Connections
+```bash
+# In a live investigation: check active and recent network connections
+ss -tupn                           # Current connections with PIDs
+netstat -plant | grep ESTABLISHED  # Established connections (if netstat available)
+find /proc/*/fd -lname 'socket:*' -print 2>/dev/null  # Process socket mapping
+```
+
+### 3.6 File System Timeline
+```bash
+# Find files created or modified in the attack window (08:00 - 09:00)
+find / -newer /tmp/reference_file -maxdepth 5 -type f 2>/dev/null
+
+# Check for recently created SUID/SGID binaries (privilege escalation tools)
+find / -perm /4000 -newer /var/log/auth.log -type f 2>/dev/null
+
+# Look for files in /tmp (common attacker staging ground)
+find /tmp -type f -ls 2>/dev/null
+```
+
+### 3.7 Persistence Mechanism Verification
+```bash
+# Check for unauthorised cron jobs
+crontab -l -u support_service 2>/dev/null
+cat /etc/cron.d/* 2>/dev/null | grep support_service
+
+# Check for SSH authorised keys added by attacker
+cat /root/.ssh/authorized_keys 2>/dev/null
+cat /home/support_service/.ssh/authorized_keys 2>/dev/null
+
+# Check /etc/passwd for UID 0 accounts (should only be root)
+awk -F: '($3 == 0) {print}' /etc/passwd
+```
+
+---
+
+## 4. Chain of Custody
+
+| Item | Details |
+| :--- | :--- |
+| **Evidence File** | `auth.log` (generated by `setup_victim.sh`) |
+| **Collection Method** | Bash script — synthetic log injection for simulation |
+| **MD5 Hash** | `$(md5sum auth.log)` — run before analysis to establish baseline |
+| **Collected By** | Jimoh Sodiq Bolaji |
+| **Collection Date** | 2025-12-01 |
+| **Chain Maintained** | Read-only copy analysed; original preserved |
+
+---
+
+## 5. Indicators of Compromise (IoCs)
+
+| Type | Value | Context |
 | :--- | :--- | :--- |
-| **Initial Access** | 15+ Failed Login attempts from IP `192.168.1.50` | `grep "Failed password" auth.log` |
-| **Breach** | Successful login for user `admin` at 08:20:01 | `grep "Accepted" auth.log` |
-| **Persistence** | Creation of backdoor user `support_service` (UID 0) | `grep "useradd" auth.log` |
-| **Exfiltration** | Data compression command via `sudo` | `grep "sudo" auth.log` |
+| **Attacker IP** | `192.168.1.50` | Source of brute-force and successful login |
+| **Compromised Account** | `admin` | Breached via password guessing |
+| **Backdoor Account** | `support_service` (UID=0) | Created for persistence |
+| **Malicious File** | `/tmp/data_dump.tar.gz` | Staged exfiltration archive |
 
-## 4. Artifacts
-* **Incident Report:** [View Full Report](../incident-reports/incident-001.md)
-* **Evidence Screenshot:**
-![Forensics](../docs/week10/screenshots/forensics-evidence.png)
+---
+
+## 6. Remediation Actions
+
+| Priority | Action | Status |
+| :--- | :--- | :--- |
+| 🔴 **CRITICAL** | Block `192.168.1.50` in NACL (see `automation/auto_remediate_nacl.py`) | ✅ Automated |
+| 🔴 **CRITICAL** | Lock `admin` account: `usermod -L admin` | ✅ Done |
+| 🔴 **CRITICAL** | Delete `support_service`: `userdel -r support_service` | ✅ Done |
+| 🟡 **HIGH** | Force all user password resets | ✅ Done |
+| 🟡 **HIGH** | Rotate all SSH keys | ✅ Done |
+| 🟢 **MEDIUM** | Enable SSH key-only auth (`PasswordAuthentication no`) | ✅ Hardened |
+| 🟢 **MEDIUM** | Deploy Fail2Ban for automated brute-force protection | 🔄 Planned |
+
+---
+
+## 7. Lessons Learned
+
+| Category | Finding | Recommendation |
+| :--- | :--- | :--- |
+| **Prevention** | Password-based SSH was enabled | Disable password auth; enforce SSH key-only login |
+| **Detection** | No automated brute-force alerting | Deploy Fail2Ban + CloudWatch alarm on failed SSH events |
+| **Response** | Manual IP blocking (too slow) | Deploy SOAR automation (see `automation/` module) |
+| **Recovery** | No immutable baseline for `/etc/passwd` | Implement file integrity monitoring (AWS Config, Tripwire) |
+
+---
+
+## 8. Artifacts
+
+- **Full Incident Report:** [`../incident-reports/incident-001.md`](../incident-reports/incident-001.md)
+- **SOAR Remediation Script:** [`../automation/auto_remediate_nacl.py`](../automation/auto_remediate_nacl.py)
+- **Simulated Log File:** [`auth.log`](./auth.log)
+- **Crime Scene Generator:** [`setup_victim.sh`](./setup_victim.sh)
+
+---
+
+**Author:** Jimoh Sodiq Bolaji  
+**Framework:** MITRE ATT&CK v15 (Enterprise)  
+**Standard:** NIST SP 800-61 (Incident Response Lifecycle)

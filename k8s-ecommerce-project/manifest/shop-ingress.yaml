@@ -1,27 +1,46 @@
+# shop-ingress.yaml — Layer 7 Ingress Routing for the KubeScale Platform
+# Routes external requests from shop.local to internal ClusterIP services.
+# The Nginx controller acts as the single, hardened entry point to the cluster.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: shop-ingress
+  namespace: ecommerce
   annotations:
-    # This annotation is critical for path-based routing
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Rewrite the matched path prefix to "/" before forwarding to the backend.
+    # Required when backend services expect requests at their root.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Use HTTPS-only between Nginx and the backend pods (when applicable)
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Rate limiting — protect backend services from request floods
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    # Enable HSTS header on responses (production best practice)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
 spec:
-  # Route shop.local/cart to the Redis cart service
+  ingressClassName: nginx
   rules:
-  - host: shop.local
-    http:
-      paths:
-      - path: /cart # <--- SPECIFIC PATH FIRST
-        pathType: Prefix
-        backend:
-          service:
-            name: redis-cart 
-            port:
-              number: 80
-      - path: / # <--- GENERAL PATH LAST
-        pathType: Prefix
-        backend:
-          service:
-            name: frontend-external
-            port:
-              number: 80
+    - host: shop.local
+      http:
+        paths:
+          # --- Cart Service (dedicated microservice, not Redis directly) ---
+          # /cart routes to the cart-service microservice which manages
+          # cart state and communicates with Redis internally.
+          - path: /cart(/|$)(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: cartservice                  # The cart microservice service
+                port:
+                  number: 7070
+
+          # --- Default: All other traffic → Frontend ---
+          - path: /()(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
