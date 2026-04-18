@@ -15,11 +15,11 @@
 
 ## 🎯 Project Mission
 
-Extend the week5 infrastructure with a **full security monitoring layer** — adding CloudTrail for API audit logging and GuardDuty for ML-powered threat detection, demonstrating the complete security stack required for production cloud environments.
+Extend the **aws-foundation** infrastructure with a **full security monitoring layer** — adding CloudTrail for API audit logging and GuardDuty for ML-powered threat detection, demonstrating the complete security stack required for production cloud environments.
 
 ---
 
-## 1. What's New in Week 6
+## 1. What's Added in This Project
 
 | Component | Added | Purpose |
 | :--- | :--- | :--- |
@@ -34,7 +34,7 @@ Extend the week5 infrastructure with a **full security monitoring layer** — ad
 ## 2. Module Composition
 
 ```
-week6-deploy/main.tf
+security-stack/main.tf
 ├── module "logging"   → S3 bucket (KMS, versioning, TLS-only)
 │                          Output: bucket_name, bucket_arn
 ├── module "security"  → CloudTrail + GuardDuty
@@ -75,10 +75,10 @@ GuardDuty analyses the log pattern
 ## 4. Deployment
 
 ```bash
-cd week6-deploy
+cd security-stack
 
 # Start LocalStack Pro
-docker-compose -f ../week3-s3-localstack/localstack-docker-compose.yml up -d
+docker-compose -f ../s3-secure-storage/localstack-docker-compose.yml up -d
 
 terraform init
 terraform apply -auto-approve
@@ -100,4 +100,4 @@ iam_instance_profile = "local-ec2-profile"
 ---
 
 **Author:** Jimoh Sodiq Bolaji  
-**Progression:** [week5-local-deploy](../week5-local-deploy) → **week6-deploy** → [week8-ha-deploy](../week8-ha-deploy) (HA + WAF + ALB)
+**Progression:** [aws-foundation](../aws-foundation) → **security-stack** → [ha-aws-architecture](../ha-aws-architecture) (HA + WAF + ALB)

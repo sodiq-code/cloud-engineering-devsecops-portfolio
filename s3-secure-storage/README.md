@@ -96,7 +96,7 @@ kms_key_id  = "abc123-..."
 ## 5. Deployment
 
 ```bash
-cd week3-s3-localstack
+cd s3-secure-storage
 
 # Start LocalStack
 docker-compose -f localstack-docker-compose.yml up -d

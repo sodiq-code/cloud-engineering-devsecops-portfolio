@@ -1,4 +1,4 @@
-# week3-s3-localstack/outputs.tf
+# s3-secure-storage/outputs.tf
 
 output "bucket_name" {
     description = "Name of the created S3 bucket"

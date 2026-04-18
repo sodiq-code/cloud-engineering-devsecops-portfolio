@@ -62,10 +62,10 @@ Deploy a fully hardened, modular web server infrastructure using Terraform — d
 ## 3. Deployment
 
 ```bash
-cd week5-local-deploy
+cd aws-foundation
 
 # Start LocalStack
-docker-compose -f ../week3-s3-localstack/localstack-docker-compose.yml up -d
+docker-compose -f ../s3-secure-storage/localstack-docker-compose.yml up -d
 
 # Deploy
 terraform init
@@ -89,4 +89,4 @@ iam_instance_profile  = "local-ec2-profile"
 ---
 
 **Author:** Jimoh Sodiq Bolaji  
-**Next Project:** [week6-deploy](../week6-deploy) — adds CloudTrail + GuardDuty security monitoring layer
+**Next Project:** [security-stack](../security-stack) — adds CloudTrail + GuardDuty security monitoring layer

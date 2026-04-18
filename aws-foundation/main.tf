@@ -1,4 +1,4 @@
-# week5-local-deploy/main.tf
+# aws-foundation/main.tf
 # First full-stack local deployment: VPC + IAM + Security + Hardened EC2.
 # All four modules work together to create a production-mirrored local environment.
 # Demonstrates the module composition pattern used in all subsequent projects.
@@ -102,7 +102,7 @@ resource "aws_instance" "web" {
     }
 
     tags = {
-        Name        = "Week5-Secure-WebServer"
+        Name        = "Secure-WebServer"
         Environment = "local"
         ManagedBy   = "Terraform"
     }

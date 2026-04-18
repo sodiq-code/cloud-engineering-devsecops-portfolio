@@ -1,4 +1,4 @@
-# week3-s3-localstack/main.tf
+# s3-secure-storage/main.tf
 # Secure-by-Design S3 storage provisioned with Terraform.
 # Security controls applied:
 #   - KMS Customer Managed Key (CMK) with annual rotation
@@ -18,7 +18,7 @@ resource "aws_kms_key" "logs_key" {
 }
 
 resource "aws_kms_alias" "logs_key_alias" {
-    name          = "alias/week3-logs-key"
+    name          = "alias/s3-secure-storage-logs-key"
     target_key_id = aws_kms_key.logs_key.key_id
 }
 
@@ -29,7 +29,7 @@ resource "aws_s3_bucket" "logs" {
     bucket = var.bucket_name
 
     tags = {
-        Name      = "week3-tf-s3"
+        Name      = "s3-secure-storage"
         Env       = "dev"
         ManagedBy = "Terraform"
     }

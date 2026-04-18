@@ -1,6 +1,6 @@
-# week6-deploy/main.tf
+# security-stack/main.tf
 # Full-stack local deployment: VPC + IAM + Security Monitoring + Hardened EC2.
-# Extends week5 by adding CloudTrail audit trail and GuardDuty threat detection,
+# Extends aws-foundation by adding CloudTrail audit trail and GuardDuty threat detection,
 # demonstrating the "Security Layer" composition pattern.
 
 terraform {

@@ -101,7 +101,7 @@ This project spans **two AZs** (`us-east-2a`, `us-east-2b`) — the minimum for 
 ## 4. Module Architecture
 
 ```
-week8-ha-deploy/
+ha-aws-architecture/
 └── main.tf                 (Composes all modules)
     ├── ../modules/logging   → S3 bucket (KMS, versioning, TLS-only, lifecycle)
     ├── ../modules/security  → CloudTrail + GuardDuty
@@ -129,7 +129,7 @@ week8-ha-deploy/
 - Terraform ≥ 1.5.0
 
 ```bash
-cd week8-ha-deploy
+cd ha-aws-architecture
 
 # Initialise and validate
 terraform init
