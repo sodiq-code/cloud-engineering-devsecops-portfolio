@@ -1,4 +1,4 @@
-# week6-deploy/outputs.tf
+# security-stack/outputs.tf
 
 output "vpc_id" {
     description = "VPC ID"

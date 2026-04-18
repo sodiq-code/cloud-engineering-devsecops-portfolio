@@ -1,4 +1,4 @@
-# week5-local-deploy/outputs.tf
+# aws-foundation/outputs.tf
 
 output "vpc_id" {
     description = "VPC ID"

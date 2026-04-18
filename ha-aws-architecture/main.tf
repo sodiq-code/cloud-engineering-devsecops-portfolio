@@ -1,4 +1,4 @@
-# week8-ha-deploy/main.tf
+# ha-aws-architecture/main.tf
 # High-Availability, Fault-Tolerant AWS Web Application Infrastructure.
 # Architecture: WAF → ALB (multi-AZ) → ASG (auto-scaling EC2 fleet) → CloudTrail
 #

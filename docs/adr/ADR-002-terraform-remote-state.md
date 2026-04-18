@@ -26,7 +26,7 @@ Adopt the **S3 Remote Backend with DynamoDB State Locking** pattern for all prod
 terraform {
   backend "s3" {
     bucket         = "my-org-terraform-state"    # Dedicated state bucket
-    key            = "week8-ha-deploy/terraform.tfstate"
+    key            = "ha-aws-architecture/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true                        # SSE-KMS encryption at rest
     dynamodb_table = "terraform-state-lock"      # Prevents concurrent applies

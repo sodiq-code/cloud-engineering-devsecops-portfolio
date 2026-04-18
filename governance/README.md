@@ -94,7 +94,7 @@ Denies all API actions performed by root account credentials. Root accounts shou
 cd governance
 
 # Start LocalStack Pro (organizations service required)
-docker-compose -f ../week3-s3-localstack/localstack-docker-compose.yml up -d
+docker-compose -f ../s3-secure-storage/localstack-docker-compose.yml up -d
 
 # Deploy governance stack
 terraform init

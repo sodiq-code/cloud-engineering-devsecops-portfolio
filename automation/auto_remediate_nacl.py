@@ -98,7 +98,7 @@ def find_vpc_id(ec2: boto3.client) -> str:
     vpcs = response.get("Vpcs", [])
     if not vpcs:
         raise VPCNotFoundError(
-            "No VPC found. Ensure Terraform has been applied in week8-ha-deploy."
+            "No VPC found. Ensure Terraform has been applied in ha-aws-architecture."
         )
 
     vpc_id = vpcs[0]["VpcId"]

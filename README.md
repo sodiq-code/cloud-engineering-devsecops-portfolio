@@ -19,9 +19,9 @@
 
 ---
 
-## 🎯 Who This Is For
+## 🎯 About This Portfolio
 
-This portfolio is for engineering teams evaluating candidates for **Senior Cloud Engineer**, **DevSecOps Engineer**, or **Site Reliability Engineer** roles. Every project here solves a real engineering problem — not a tutorial exercise — using production-grade patterns, documented architectural decisions, and automated security validation.
+This is my production engineering portfolio. Every project solves a real infrastructure or security problem using production-grade patterns, documented architectural decisions, and automated security validation — no tutorials, no toy apps.
 
 ---
 
@@ -30,17 +30,17 @@ This portfolio is for engineering teams evaluating candidates for **Senior Cloud
 ```
 CloudDefense Engineering Portfolio
 │
-├── 🚀  KubeScale Platform         k8s-ecommerce-project/    Grade: A+
-├── 🔄  HA AWS Architecture        week8-ha-deploy/           Grade: A+
-├── 🛡️  S3 Secure Storage          week3-s3-localstack/       Grade: A+
-├── 🏛️  Enterprise Governance       governance/                Grade: A+
-├── ⚡  SOAR Threat Automation      automation/                Grade: A+
-├── 🔬  DFIR Investigation          forensics/                 Grade: A+
-├── 🏗️  Local Deploy (w5)           week5-local-deploy/        Grade: A
-├── 🔍  Full Security Stack (w6)    week6-deploy/              Grade: A
-├── 🧩  Reusable Terraform Modules  modules/                   Grade: A+
-├── 🔐  CI/CD Security Pipeline     .github/workflows/         Grade: A+
-└── 📚  Architecture Decision Records docs/adr/               Grade: A+
+├── 🚀  KubeScale Platform           k8s-ecommerce-project/
+├── 🔄  HA AWS Architecture          ha-aws-architecture/
+├── 🛡️  S3 Secure Storage            s3-secure-storage/
+├── 🏛️  Enterprise Governance         governance/
+├── ⚡  SOAR Threat Automation        automation/
+├── 🔬  DFIR Investigation            forensics/
+├── 🏗️  Secure Infrastructure (IaC)   aws-foundation/
+├── 🔍  Full Security Stack           security-stack/
+├── 🧩  Reusable Terraform Modules    modules/
+├── 🔐  CI/CD Security Pipeline       .github/workflows/
+└── 📚  Architecture Decision Records docs/adr/
 ```
 
 ---
@@ -67,7 +67,7 @@ The flagship project. An 11-service polyglot e-commerce platform running on Kube
 ---
 
 ### 2. �� High-Availability AWS Architecture
-**[→ View Project](./week8-ha-deploy)**
+**[→ View Project](./ha-aws-architecture)**
 
 Transforms a single server into a self-healing, multi-AZ fleet protected by WAF and monitored by GuardDuty — demonstrating the AWS Well-Architected Framework in code.
 
@@ -213,10 +213,10 @@ Formal documentation of major architectural decisions — demonstrating senior-l
 │   ├── email-service/          # Custom Python microservice (Flask + gunicorn)
 │   ├── finops/                 # LocalStack Pro docker-compose for zero-cost AWS emulation
 │   └── microservices-demo/     # Google Online Boutique source (all 11 services)
-├── week8-ha-deploy/            # HA Architecture: WAF + ALB + ASG + CloudTrail + GuardDuty
-├── week6-deploy/               # Full security stack: VPC + IAM + CloudTrail + GuardDuty + EC2
-├── week5-local-deploy/         # Foundation: VPC + IAM + hardened EC2
-├── week3-s3-localstack/        # Secure storage: S3 + KMS + TLS-only + versioning + lifecycle
+├── ha-aws-architecture/        # HA Architecture: WAF + ALB + ASG + CloudTrail + GuardDuty
+├── security-stack/             # Full security stack: VPC + IAM + CloudTrail + GuardDuty + EC2
+├── aws-foundation/             # Foundation: VPC + IAM + hardened EC2
+├── s3-secure-storage/          # Secure storage: S3 + KMS + TLS-only + versioning + lifecycle
 ├── governance/                 # Enterprise SCPs: 3 policies at org root
 ├── automation/                 # SOAR: Python NACL remediation + pytest test suite
 ├── forensics/                  # DFIR: MITRE ATT&CK mapped investigation
