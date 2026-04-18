@@ -21,7 +21,7 @@
 
 ## 🎯 About This Portfolio
 
-This is my production engineering portfolio. Every project solves a real infrastructure or security problem using production-grade patterns, documented architectural decisions, and automated security validation — no tutorials, no toy apps.
+This is my production engineering portfolio. Every project solves a real infrastructure or security problem using production-grade patterns, documented architectural decisions, and automated security validation.
 
 ---
 
