@@ -27,7 +27,7 @@ jobs:
       # Pinned to a specific SHA for supply-chain security
       # Prevents a compromised upstream tag from executing arbitrary code in CI
       - name: Run Trivy Scanner (IaC — Table Output)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           scan-type: 'config'
           hide-progress: true
@@ -38,7 +38,7 @@ jobs:
           trivyignores: '.trivyignore'
 
       - name: Run Trivy Scanner (IaC — SARIF Upload)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.30.0
         if: always()              # Run even if table scan fails, to always post findings
         with:
           scan-type: 'config'
@@ -50,7 +50,7 @@ jobs:
           trivyignores: '.trivyignore'
 
       - name: Upload IaC SARIF to GitHub Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-iac.sarif'
@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy Filesystem Scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.30.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -78,7 +78,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Filesystem SARIF to GitHub Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-fs.sarif'
@@ -126,7 +126,7 @@ jobs:
           soft_fail: true         # Report findings without blocking; Trivy is the hard gate
 
       - name: Upload Checkov SARIF to GitHub Security Tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'checkov.sarif'

@@ -50,6 +50,7 @@ module "iam" {
 # Inbound: HTTP from internet only
 # Outbound: Restricted to VPC CIDR (defence-in-depth, prevents exfiltration)
 # =============================================================================
+#checkov:skip=CKV_AWS_260:Port 80 open to internet is intentional for this public-facing web server; WAF or ALB should be placed in front in production
 resource "aws_security_group" "web_sg" {
     name        = "web-server-sg"
     description = "Allow HTTP inbound; restrict egress to VPC"
@@ -76,12 +77,14 @@ resource "aws_security_group" "web_sg" {
 # EC2 WEB SERVER — Hardened Configuration
 # Security controls: IMDSv2, encrypted root volume, IAM role, no public IP
 # =============================================================================
+#checkov:skip=CKV_AWS_135:t2.micro instance type does not support EBS optimisation; upgrade to t3.micro or larger in production
 resource "aws_instance" "web" {
     ami                    = "ami-12345678"        # LocalStack dummy AMI
     instance_type          = "t2.micro"
     subnet_id              = module.vpc.public_subnet_id
     iam_instance_profile   = module.iam.instance_profile_name
     vpc_security_group_ids = [aws_security_group.web_sg.id]
+    monitoring             = true                  # Enable detailed CloudWatch monitoring (1-min intervals)
 
     # IMDSv2: Session tokens required — prevents SSRF attacks on the metadata service
     metadata_options {

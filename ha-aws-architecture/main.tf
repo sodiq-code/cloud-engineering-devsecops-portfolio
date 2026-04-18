@@ -148,6 +148,7 @@ resource "aws_launch_template" "app" {
 # SECURITY GROUP: APPLICATION LOAD BALANCER
 # Internet-facing — accepts HTTP and HTTPS only
 # =============================================================================
+#checkov:skip=CKV_AWS_260:Port 80 open to internet is intentional for this public ALB; HTTP traffic is immediately redirected to HTTPS (301) at the listener level
 resource "aws_security_group" "alb_sg" {
     name        = "ha-alb-sg"
     description = "Allow Internet to ALB on HTTP and HTTPS"
@@ -170,11 +171,11 @@ resource "aws_security_group" "alb_sg" {
     }
 
     egress {
-        description = "Allow ALB to reach backend EC2 instances"
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"
-        cidr_blocks = ["0.0.0.0/0"]
+        description = "Allow ALB to reach backend EC2 instances on port 80 within VPC"
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["10.0.0.0/16"]
     }
 }
 
@@ -197,10 +198,18 @@ resource "aws_security_group" "instance_sg" {
     }
 
     egress {
-        description = "Allow instances to reach internet via NAT (for updates)"
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"
+        description = "Allow instances to reach internet via NAT for HTTPS (AWS APIs, package repos)"
+        from_port   = 443
+        to_port     = 443
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+    }
+
+    egress {
+        description = "Allow instances to reach HTTP package repositories via NAT"
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
         cidr_blocks = ["0.0.0.0/0"]
     }
 }
@@ -284,6 +293,7 @@ resource "aws_lb" "main" {
     internal                   = false
     load_balancer_type         = "application"
     drop_invalid_header_fields = true    # Prevent HTTP header injection
+    enable_deletion_protection = true    # Prevent accidental ALB deletion
     security_groups            = [aws_security_group.alb_sg.id]
 
     # Multi-AZ placement: ALB spans BOTH public subnets for true HA

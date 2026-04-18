@@ -229,15 +229,6 @@ Formal documentation of major architectural decisions — demonstrating senior-l
 
 ---
 
-## 🎓 Education & Credentials
-
-| Credential | Institution | Status |
-| :--- | :--- | :--- |
-| B.Eng Computer Engineering | Federal University of Technology Akure (FUTA) | 2025 |
-| Certified in Cybersecurity (CC) | ISC² | Candidate |
-
----
-
 ## 📬 Contact
 
 | Channel | Link |
