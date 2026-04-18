@@ -1,40 +1,92 @@
-# Week 5: Project A - Secure Network & Identity
+# 🏗️ Project A: Secure Local Infrastructure Deployment (IaC Foundations)
 
-## Project Overview
+<div align="center">
 
-This week, I designed and implemented the foundational infrastructure for a secure web application using Infrastructure as Code (IaC) principles with Terraform. The project demonstrates core cloud security concepts including network segmentation, identity management, and the principle of least privilege.
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
+![AWS VPC](https://img.shields.io/badge/AWS_VPC-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
+![EC2](https://img.shields.io/badge/EC2-Hardened-brightgreen?style=for-the-badge)
+![LocalStack](https://img.shields.io/badge/LocalStack-Dev-blue?style=for-the-badge)
 
-## What I Built
+**VPC + IAM + EC2 | IMDSv2 | Encrypted EBS | Least Privilege | Zero Cloud Cost**
 
-### VPC Module (Virtual Private Cloud)
+</div>
 
-I created a custom network architecture with proper segmentation:
+---
 
-- **Public Subnet:** Internet-facing subnet designed to host resources that require direct internet access, such as load balancers and bastion hosts. This subnet is associated with an Internet Gateway for inbound/outbound traffic.
-- **Private Subnet:** A secure, isolated subnet with no direct internet access. This is where sensitive workloads like databases and application servers reside. Outbound traffic (if needed) would route through a NAT Gateway.
-- **Route Tables:** Configured separate route tables for public and private subnets to control traffic flow.
+## 🎯 Project Mission
 
-### IAM Module (Identity and Access Management)
+Deploy a fully hardened, modular web server infrastructure using Terraform — demonstrating the four-layer composition pattern that scales from local development to production: **Networking → Identity → Compute → Security**.
 
-I implemented a "Least Privilege" access model:
+---
 
-- **IAM Role:** Created a dedicated role for the web server EC2 instance, eliminating the need for long-lived access keys.
-- **IAM Policy:** Crafted a custom policy that grants:
-    - `s3:GetObject` - Read access to specific S3 buckets
-    - `s3:ListBucket` - Ability to list bucket contents
-- **Explicit Denies:** All other AWS actions are implicitly denied, ensuring the instance cannot perform unauthorized operations.
+## 1. Infrastructure Layers
 
-### Integration
+```
+┌─────────────────────────────────────────────────────┐
+│  Layer 4: Compute (EC2 Web Server)                  │
+│  ├── IMDSv2 enforced (http_tokens = required)       │
+│  ├── Encrypted gp3 EBS root volume                  │
+│  ├── No public IP assignment                        │
+│  └── Security Group: HTTP in / VPC-only egress      │
+├─────────────────────────────────────────────────────┤
+│  Layer 3: Identity (IAM Module)                     │
+│  └── EC2 instance profile (least-privilege S3 role) │
+├─────────────────────────────────────────────────────┤
+│  Layer 2: Security (Firewall Rules)                 │
+│  ├── Inbound: HTTP (port 80) from internet          │
+│  └── Egress: VPC CIDR only (no internet exfiltration)│
+├─────────────────────────────────────────────────────┤
+│  Layer 1: Networking (VPC Module)                   │
+│  ├── VPC 10.0.0.0/16                                │
+│  ├── Public Subnet A (AZ-a) + Subnet B (AZ-b)      │
+│  ├── Private Subnet A (AZ-a) + Subnet B (AZ-b)     │
+│  ├── Internet Gateway                               │
+│  └── NAT Gateway (private subnet egress)           │
+└─────────────────────────────────────────────────────┘
+```
 
-- Connected all modules using Terraform's module composition pattern
-- Deployed the complete infrastructure stack to LocalStack for local testing and validation
-- Verified resource creation and policy attachments
+---
 
-## Security Controls Implemented
+## 2. Security Controls
 
-| Control | Implementation | Security Benefit |
-|---------|----------------|------------------|
-| **Network Isolation** | Database resources placed in Private Subnet | No direct internet exposure; reduces attack surface |
-| **Least Privilege** | EC2 uses IAM Role instead of access keys | No credential management; automatic rotation; scoped permissions |
-| **Security Groups** | Inbound rule allowing only port 80 (HTTP) | Minimizes open ports; explicit allow-list approach |
-| **Defense in Depth** | Multiple layers (VPC + IAM + Security Groups) | If one control fails, others still protect resources |
+| Control | Implementation | Threat Mitigated |
+| :--- | :--- | :--- |
+| **IMDSv2** | `http_tokens = "required"`, hop_limit=1 | SSRF credential theft via metadata endpoint |
+| **EBS Encryption** | `encrypted = true`, `volume_type = "gp3"` | Data-at-rest exposure |
+| **Egress restriction** | `cidr_blocks = ["10.0.0.0/16"]` | Data exfiltration to internet |
+| **IAM least privilege** | S3 read-only to specific bucket ARN | Credential abuse / lateral movement |
+| **No public IP** | `map_public_ip_on_launch = false` | Direct internet exposure of EC2 |
+
+---
+
+## 3. Deployment
+
+```bash
+cd week5-local-deploy
+
+# Start LocalStack
+docker-compose -f ../week3-s3-localstack/localstack-docker-compose.yml up -d
+
+# Deploy
+terraform init
+terraform apply -auto-approve
+
+# View outputs
+terraform output
+```
+
+---
+
+## 4. Outputs
+
+```
+vpc_id                = "vpc-abc123"
+instance_id           = "i-abc123"
+security_group_id     = "sg-abc123"
+iam_instance_profile  = "local-ec2-profile"
+```
+
+---
+
+**Author:** Jimoh Sodiq Bolaji  
+**Next Project:** [week6-deploy](../week6-deploy) — adds CloudTrail + GuardDuty security monitoring layer

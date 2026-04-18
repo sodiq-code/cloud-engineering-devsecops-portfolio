@@ -11,7 +11,7 @@ metadata:
     version: v1
     tier: backend
 spec:
-  replicas: 3                          # 3 replicas across nodes for HA
+  replicas: 2                          # Initial replicas = HPA minReplicas; HPA will scale 2→10 dynamically
   selector:
     matchLabels:
       app: email-service

@@ -87,6 +87,11 @@ resource "aws_organizations_policy" "region_restrict" {
 resource "aws_organizations_policy" "deny_root_actions" {
   name        = "Deny-Root-Account-Actions"
   description = "CIS Benchmark L1: Prevents root account from performing any API actions"
+  # NOTE: The SCP JSON uses 'arn:aws:iam::*:root' where '*' is a wildcard over account IDs.
+  # This is intentional and required for organisation-wide enforcement — it must match
+  # root accounts in ALL member accounts. This is different from the KMS key policy fix
+  # (which scopes the key admin to a specific account ARN). Organisation SCPs target
+  # cross-account principals by design; a wildcard here is the correct AWS pattern.
   content     = file("${path.module}/policies/scp_deny_root_actions.json")
   type        = "SERVICE_CONTROL_POLICY"
 }

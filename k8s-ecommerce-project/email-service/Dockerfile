@@ -10,6 +10,8 @@
 # =============================================================================
 
 FROM python:3.9.18-slim
+# NOTE: Python 3.9 EOL is October 2025.
+# Upgrade to python:3.11-slim (EOL: October 2027) before that date to maintain security patch coverage.
 
 # Build metadata — useful for image traceability in registries
 LABEL maintainer="sodiqjimoh80@gmail.com"

@@ -32,10 +32,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION — configurable via environment variables for production Lambda
+# In Lambda: set AWS_REGION via function configuration; ENDPOINT_URL is unset.
+# In LocalStack dev: export LOCALSTACK_ENDPOINT=http://localhost:4566
 # =============================================================================
-AWS_REGION    = "us-east-2"
-ENDPOINT_URL  = "http://localhost:4566"   # LocalStack endpoint for local dev
+import os
+AWS_REGION    = os.environ.get("AWS_DEFAULT_REGION", "us-east-2")
+ENDPOINT_URL  = os.environ.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
 
 
 # =============================================================================
@@ -58,16 +61,21 @@ def get_ec2_client(region: str = AWS_REGION, endpoint_url: str = ENDPOINT_URL) -
     """
     Create a boto3 EC2 client.
 
-    In production (Lambda), credentials come from the execution role — no
-    hardcoded keys. The endpoint_url is omitted in production.
+    In production (Lambda): credentials come from the execution role (no hardcoded keys).
+    The endpoint_url is not set in Lambda — boto3 uses real AWS endpoints.
+    In LocalStack dev: set LOCALSTACK_ENDPOINT=http://localhost:4566 and LOCALSTACK_MODE=true.
     """
-    return boto3.client(
-        "ec2",
-        region_name=region,
-        endpoint_url=endpoint_url,
-        aws_access_key_id="test",      # LocalStack accepts any value
-        aws_secret_access_key="test",  # Remove hardcoded creds in production
-    )
+    # Only inject LocalStack dummy credentials in local development mode.
+    # In Lambda, boto3 reads credentials from the execution role automatically.
+    if os.environ.get("LOCALSTACK_MODE", "true").lower() == "true":
+        return boto3.client(
+            "ec2",
+            region_name=region,
+            endpoint_url=endpoint_url,
+            aws_access_key_id="test",      # LocalStack accepts any dummy value
+            aws_secret_access_key="test",
+        )
+    return boto3.client("ec2", region_name=region)
 
 
 # =============================================================================

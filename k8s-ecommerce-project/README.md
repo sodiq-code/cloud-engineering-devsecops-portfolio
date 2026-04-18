@@ -1,145 +1,242 @@
-# 🛡️ KubeScale: High-Availability Microservices & SRE Observability Platform
+# 🚀 KubeScale: Production-Grade Microservices & SRE Observability Platform
 
-![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white)
-![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white)
-![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=Prometheus&logoColor=white)
-![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=Grafana&logoColor=white)
+<div align="center">
 
-> **Project Mission:** To architect a production-grade, self-healing e-commerce ecosystem that prioritizes cost-efficiency (FinOps), air-gapped security, and full-stack observability.
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
+![Security](https://img.shields.io/badge/Trivy-0-critical?style=for-the-badge&logo=aqua&logoColor=white&color=brightgreen&label=Trivy%20Findings)
 
----
+**11-Service Polyglot Platform | Zero-Cost Dev via LocalStack | SRE Four Golden Signals**
 
-## 1. Project Overview
-I architected and deployed a cloud-native e-commerce platform consisting of **11 polyglot microservices** (Go, C#, Node.js, Python). This project serves as a masterclass in modern **Site Reliability Engineering (SRE)**, featuring automated recovery, Layer 7 traffic engineering, and sub-millisecond incident response.
-
----
-
-## 2. System Architecture & Self-Healing Design
-The application is composed of loosely coupled microservices communicating via gRPC. 
-
-### Microservices Map
-![Microservices Architecture](images/architecture-map.png)
-> *Figure 1: Service-to-Service communication map. The Frontend (public) orchestrates backend services like Checkout and Payment, while Redis handles session persistence.*
-
-### The Control Loop
-I utilized Kubernetes **Deployments** and **ReplicaSets** to ensure high availability. By defining a declarative "Desired State" in YAML, the Kubernetes Controller Manager automatically detects pod failures and restarts them in sub-seconds, ensuring **99.9% application uptime**.
-
-![Self Healing Logic](images/self-healing.png)
-> *Figure 2: The Kubernetes Control Loop ensuring the "Desired State" always matches the "Actual State."*
+</div>
 
 ---
 
-## 3. Advanced Networking & Traffic Flow
-Instead of using basic `NodePort` or `port-forwarding`, I implemented an **Ingress-based architecture** to simulate a real-world enterprise edge router.
+## 🎯 Project Mission
 
-### Traffic Routing Strategy
-* **Ingress Controller:** Nginx manages name-based virtual hosting for `shop.local`.
-* **Path-Based Routing:** External requests are intelligently routed to the correct `ClusterIP` services based on host headers.
-* **The "Local-First" Bridge:** Resolved network isolation between Minikube pods and local services by implementing a custom DNS bridge (`host.minikube.internal`), allowing pods to consume emulated AWS resources at zero cost.
-
-![Network Flow](images/network-flow.png)
-> *Figure 3: Layer 7 Traffic Flow. External requests hit the Nginx Controller and are distributed across the healthy pod replicas.*
+Engineer a production-grade, self-healing e-commerce ecosystem that demonstrates mastery of **Site Reliability Engineering (SRE)**, **Zero-Trust Container Security**, and **FinOps-driven development** — achieving enterprise-scale reliability at zero cloud cost.
 
 ---
 
-## 4. SRE Observability (Prometheus & Grafana)
-Reliability is measured, not guessed. I deployed the **kube-prometheus-stack** via Helm to monitor the cluster's **Four Golden Signals**:
+## 1. Architecture Overview
 
-1.  **Latency:** Tracking response times for the frontend and checkout services.
-2.  **Traffic:** Monitoring request rates (req/sec) to identify peak loads.
-3.  **Errors:** Visualizing 5xx/4xx error rates to trigger proactive debugging.
-4.  **Saturation:** Identifying CPU/Memory pressure to prevent **OOMKill** events.
+The platform orchestrates **11 polyglot microservices** (Go, C#, Node.js, Python) communicating over gRPC, exposed through a hardened Nginx Ingress Controller.
+
+```
+Internet
+    │
+    ▼
+[Nginx Ingress Controller]   ◄── Layer 7 routing (host-based virtual hosting)
+    │                              Rate limiting (100 req/s), Security headers
+    ├──► /        ──► frontend:80            (React SPA — Go)
+    └──► /cart    ──► cartservice:7070       (Cart microservice — C#)
+
+Internal cluster traffic (ClusterIP only):
+frontend ──gRPC──► productcatalogservice ──► recommendationservice
+         ──gRPC──► currencyservice
+         ──gRPC──► checkoutservice ──► paymentservice
+                                    └──► emailservice (Python/Flask)
+                                    └──► shippingservice
+cartservice ──► redis (session persistence)
+```
+
+### Self-Healing Architecture
+
+Kubernetes **Deployments + ReplicaSets** maintain a declarative desired state. The Controller Manager continuously reconciles actual vs. desired state, replacing failed pods in sub-seconds — delivering **99.9% uptime SLA**.
+
+```
+Desired State (YAML) ──► Controller Manager ──► ReplicaSet
+         ↑                                          │
+         └──── Reconcile if mismatch ◄─── Actual Pods
+```
+
+---
+
+## 2. Kubernetes Manifest Inventory
+
+| Manifest | Purpose | Key Features |
+| :--- | :--- | :--- |
+| [`deployment.yaml`](manifest/deployment.yaml) | Email service with 3 replicas | Resource limits, probes, seccompProfile, anti-affinity |
+| [`service.yaml`](manifest/service.yaml) | ClusterIP internal service | Named ports, correct namespace |
+| [`shop-ingress.yaml`](manifest/shop-ingress.yaml) | Layer 7 routing rulebook | Rate limiting, security headers, correct /cart routing |
+| [`hpa.yaml`](manifest/hpa.yaml) | Horizontal Pod Autoscaler | CPU 70% / Memory 80% thresholds, scale-in/out behaviour |
+| [`network-policy.yaml`](manifest/network-policy.yaml) | Zero-Trust traffic rules | Default deny-all, explicit allow rules per service |
+
+---
+
+## 3. Zero-Trust Container Security (0 Trivy Findings)
+
+Every container in this platform is hardened to the following baseline — verified clean by Aqua Security Trivy:
+
+```yaml
+securityContext:
+  runAsNonRoot: true              # Never run as root
+  runAsUser: 1000                 # Specific non-root UID
+  readOnlyRootFilesystem: true    # Blocks malware disk writes
+  allowPrivilegeEscalation: false # Prevents sudo/setuid escalation
+  capabilities:
+    drop: [ALL]                   # Remove all Linux kernel capabilities
+  seccompProfile:
+    type: RuntimeDefault          # Apply default syscall filtering
+```
+
+**NetworkPolicy** enforces east-west traffic control:
+- Default **deny-all** ingress and egress for the entire namespace
+- Explicit allow rules for each service-to-service communication path
+- Ingress Controller is the only external entry point
+
+---
+
+## 4. SRE Observability — Four Golden Signals
+
+> *"If you can only measure four metrics of your user-facing system, focus on these four."* — SRE Book, Google
+
+Deployed the **kube-prometheus-stack** via Helm to instrument all Four Golden Signals:
+
+| Signal | What It Measures | Alert Threshold |
+| :--- | :--- | :--- |
+| **Latency** | P95 response time (frontend, checkout) | >500ms for 5 minutes |
+| **Traffic** | Requests per second across all services | Informational |
+| **Errors** | 5xx/4xx error rate percentage | >1% for 2 minutes |
+| **Saturation** | CPU/Memory utilisation per pod | >80% → HPA triggers scale-out |
+
+### Deployment Commands
+```bash
+# Install Prometheus + Grafana via Helm
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack \
+    --namespace monitoring --create-namespace \
+    --set grafana.service.type=LoadBalancer
+
+# Access Grafana UI
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
+# Navigate to: http://localhost:3000 (admin/prom-operator)
+```
 
 ![Grafana Dashboard](images/grafana-cluster.png)
-> *Figure 4: Real-time SRE Dashboard visualizing pod health and resource utilization across the 10-tier platform.*
+*Real-time SRE dashboard showing cluster health, pod memory, and CPU saturation*
 
 ---
 
-## 5. 💸 FinOps: Eliminating Non-Production OpEx
-**The Challenge:** Developing this 11-tier platform on a live AWS EKS cluster would typically cost **~$500/month** due to control plane fees, NAT Gateways, and managed S3/SQS usage.
+## 5. FinOps: Zero-Cost Hybrid Development
 
-**The Strategy:** I engineered a **Hybrid Emulation Workflow** using **LocalStack Pro**.
-* **AWS Mocking:** Architected emulated S3 (Storage), SQS (Queues), and WAFv2 (Security) locally.
-* **Networking:** Implemented a `host.minikube.internal` bridge to allow containerized pods to interact with the host-based emulated services.
+**The Challenge:** Running this 11-service platform on AWS EKS costs ~**$194–$500/month** (control plane, NAT Gateways, managed services).
 
-![FinOps Architecture](images/finops-architecture.png)
-> *Figure 5: The Zero-Cost Hybrid Development Architecture. By bridging Minikube with LocalStack Pro, I achieved 100% cost avoidance for the dev lifecycle.*
+**The Solution:** LocalStack Pro emulates the full AWS API surface locally, achieving **$0 cloud spend** during the entire development lifecycle.
 
-### **Emulation Verification**
-The screenshot below confirms the successful orchestration of essential AWS services within the local environment, providing the necessary backend for the microservices without cloud expenditure.
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Minikube Cluster (Local K8s)                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  frontend    │  │  checkout    │  │  email-svc   │     │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘     │
+│         │                  │                  │              │
+│         └──────────────────┴──────────────────┘              │
+│                   host.minikube.internal                      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │ AWS SDK calls (port 4566)
+┌──────────────────────────▼──────────────────────────────────┐
+│  LocalStack Pro (Docker)                                    │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐           │
+│  │  S3  │ │ SQS  │ │ IAM  │ │ KMS  │ │ WAF  │           │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘           │
+│                    Status: ✅ All Healthy                  │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ![LocalStack Status](images/localstack-status.png)
-> *Figure 6: LocalStack System Status proving the availability of emulated IAM, KMS, WAF V2, S3, and SQS services.*
+*LocalStack health check confirming all emulated AWS services are operational*
 
 ---
 
-## 6. Key Engineering Achievements
-* **Automated Self-Healing:** Successfully tested the Kubernetes control loop by simulating pod crashes and observing 100% automated recovery.
-* **Advanced Ingress Management:** Configured Nginx to handle SSL termination and name-based virtual hosting, moving away from "lab-style" port-forwarding.
-* **Infrastructure as Code (IaC):** Utilized Terraform to maintain modularity and prevent environment drift across the networking and security layers.
-* **Security Hardening:** Implemented Non-Root user execution and Read-Only root filesystems in Dockerfiles to reach a **0-finding baseline** in Aqua Security Trivy scans.
-* **FinOps Optimization:** Integrated LocalStack to emulate cloud dependencies, ensuring the development lifecycle incurs **$0 cloud spend**.
+## 6. Horizontal Pod Autoscaler (HPA)
+
+The HPA completes the SRE self-healing story: when saturation is detected by Prometheus, the HPA automatically scales the deployment to restore capacity.
+
+```
+Prometheus metrics ──► Metrics Server ──► HPA Controller
+                                              │
+                              ┌───────────────┼───────────────┐
+                              ▼               ▼               ▼
+                         CPU > 70%     Memory > 80%    Scale from 2→10
+                         Scale out     Scale out       pods automatically
+```
 
 ---
 
-## Technical Stack
-- **Orchestration:** Kubernetes (Namespaces, Deployments, Services, RBAC)
-- **Ingress:** Nginx Ingress Controller (Layer 7 Routing)
-- **CI/CD & Security:** GitHub Actions, Aqua Security Trivy, Git
-- **Observability:** Prometheus, Grafana, Helm
-- **Cloud Emulation:** LocalStack Pro (FinOps Strategy)
-- **Languages:** Python (Email Service), Go, Node.js, C#
+## 7. Quick Start Guide
 
----
+### Prerequisites
+- Docker Desktop
+- Minikube ≥ v1.32
+- kubectl ≥ v1.28
+- Helm ≥ v3.12
+- LocalStack Pro (`LS_TOKEN`)
 
-## 7. How to Run Locally
-**Prerequisites:** Docker Desktop, Minikube, kubectl, Helm.
+### Step 1: Start Cloud Emulation Layer
+```bash
+cd k8s-ecommerce-project/finops
+cp .env.example .env && echo "LS_TOKEN=your_token_here" >> .env
+docker-compose up -d
+curl http://localhost:4566/_localstack/health   # Verify services are running
+```
 
-### Step 1: Initialize Cloud Emulation (FinOps Layer)
-Before starting the cluster, the backend dependencies must be initialized.
-1. Navigate to the FinOps directory: `cd k8s-ecommerce-project/finops`
-2. Create a `.env` file and add your `LS_TOKEN`.
-3. Start the emulated cloud environment:
-   ```bash
-   docker-compose up -d
-    ```
-
-### Step 2: Start the Kubernetes Cluster
-1.  Start Minikube with resources optimized for 11 microservices:
-    ```bash
-    minikube start --cpus=4 --memory=8192
-    ```
-2.  Enable the Ingress Controller:
-    ```bash
-    minikube addons enable ingress
-    ```
+### Step 2: Start Kubernetes Cluster
+```bash
+minikube start --cpus=4 --memory=8192
+minikube addons enable ingress
+minikube addons enable metrics-server     # Required for HPA
+```
 
 ### Step 3: Deploy the Platform
-1.  Apply all manifests:
-    ```bash
-    kubectl apply -f k8s-manifests/
-    ```
-2.  Update `/etc/hosts` for local DNS resolution:
-    ```bash
-    echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
-    ```
+```bash
+# Apply namespace, network policies, and all microservice manifests
+kubectl create namespace ecommerce
+kubectl apply -f k8s-ecommerce-project/manifest/network-policy.yaml
+kubectl apply -f k8s-ecommerce-project/microservices-demo/kubernetes-manifests/
+kubectl apply -f k8s-ecommerce-project/manifest/deployment.yaml
+kubectl apply -f k8s-ecommerce-project/manifest/hpa.yaml
+kubectl apply -f k8s-ecommerce-project/manifest/shop-ingress.yaml
 
-### Step 4: Verification
-- **Web UI:** Navigate to `http://shop.local` in your browser.
-- **Health Check:** `curl http://localhost:4566/_localstack/health` to verify AWS service status.
+# Configure local DNS
+echo "$(minikube ip) shop.local" | sudo tee -a /etc/hosts
+```
+
+### Step 4: Deploy Observability Stack
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack \
+    --namespace monitoring --create-namespace
+```
+
+### Step 5: Verify
+```bash
+kubectl get pods -n ecommerce             # All pods Running
+kubectl get hpa -n ecommerce              # HPA active
+kubectl get networkpolicy -n ecommerce    # Policies applied
+curl http://shop.local                    # Frontend accessible
+```
 
 ---
 
-## Technical Stack
-- **Orchestration:** Kubernetes (Namespaces, Deployments, Services, RBAC)
-- **Ingress:** Nginx Ingress Controller (Layer 7 Routing)
-- **CI/CD & Security:** GitHub Actions, Aqua Security Trivy
-- **Observability:** Prometheus, Grafana, Helm
-- **Cloud Emulation:** LocalStack Pro (FinOps Strategy)
-- **Languages:** Go, Node.js, Python, C#
+## 8. Technical Stack
+
+| Layer | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Orchestration** | Kubernetes + Minikube | Container scheduling and self-healing |
+| **Traffic** | Nginx Ingress Controller | Layer 7 routing, rate limiting, TLS termination |
+| **Observability** | Prometheus + Grafana (Helm) | Metrics collection and dashboarding |
+| **Security** | NetworkPolicy + SecurityContext + Trivy | Zero-trust network + container hardening |
+| **Autoscaling** | HPA (autoscaling/v2) | CPU/Memory-driven pod scaling |
+| **FinOps** | LocalStack Pro | Zero-cost AWS API emulation |
+| **Languages** | Python, Go, Node.js, C# | Polyglot microservices |
+| **CI/CD** | GitHub Actions + Trivy | Security gate on every push/PR |
 
 ---
-**Author:** Jimoh Sodiq Bolaji  
-**Contact:** [sodiqjimoh80@gmail.com](mailto:sodiqjimoh80@gmail.com)  
-**GitHub:** [sodiq-code](https://github.com/sodiq-code/cloud-engineering-devsecops-portfolio)
+
+**Author:** Jimoh Sodiq Bolaji | [sodiqjimoh80@gmail.com](mailto:sodiqjimoh80@gmail.com)  
+**GitHub:** [sodiq-code](https://github.com/sodiq-code)  
+**Decision Records:** [ADR-001](../docs/adr/ADR-001-localstack-over-real-aws.md) | [ADR-003](../docs/adr/ADR-003-container-security-hardening.md)

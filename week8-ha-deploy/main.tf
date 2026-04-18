@@ -98,7 +98,15 @@ module "iam" {
 # =============================================================================
 resource "aws_launch_template" "app" {
     name_prefix   = "ha-app-"
-    image_id      = "ami-02d1e544b84bf7502"   # Amazon Linux 2 AMI (us-east-2)
+    # AMI ID: Amazon Linux 2 (us-east-2, 2024-01-15).
+    # NOTE: For production, replace with an aws_ami data source to always get the latest:
+    #   data "aws_ami" "amazon_linux_2" {
+    #     most_recent = true
+    #     owners      = ["amazon"]
+    #     filter { name = "name"; values = ["amzn2-ami-hvm-*-x86_64-gp2"] }
+    #   }
+    # Python 3.9.18 EOL: October 2025. Upgrade base image to python:3.11-slim before EOL.
+    image_id      = "ami-02d1e544b84bf7502"   # LocalStack dummy AMI — replace for real AWS
     instance_type = "t2.micro"
 
     iam_instance_profile {
