@@ -9,6 +9,10 @@ security logic → forensics analysis → Python unit test execution.
 No real AWS account or running LocalStack required.
 All AWS calls in the Python tests are intercepted by moto (in-memory mock).
 
+Dependencies (install once):
+    pip install pyyaml                        # YAML parsing
+    pip install -r automation/requirements.txt  # boto3, pytest, moto (for Suite 8)
+
 Usage:
     python smoke_test.py               # full suite
     python smoke_test.py --skip-tests  # skip pytest (structural checks only)
@@ -855,7 +859,9 @@ def test_cicd_pipeline() -> None:
     if wf is None:
         return
 
-    # Triggers — PyYAML 5.x parses bare `on:` as boolean True under YAML 1.1
+    # Triggers — PyYAML parses the bare YAML key `on:` as the boolean True
+    # (YAML 1.1 core schema treats "on" as a truthy value).  Fall back to
+    # wf.get(True, {}) to handle both str-key and bool-key representations.
     triggers = wf.get("on", wf.get(True, {})) or {}
     for trigger in ["push", "pull_request"]:
         if trigger in triggers:
@@ -1007,13 +1013,15 @@ def test_security_hygiene() -> None:
         fail_test(S, "No real AWS credentials in .tf files",
                   f"Potential leak in: {leaked}")
 
-    # IMDSv2 enforced everywhere EC2 is launched
-    ec2_tf_files = [f for f in tf_files
-                    if 'resource "aws_instance"' in f.read_text(encoding="utf-8", errors="ignore")
-                    or 'resource "aws_launch_template"' in f.read_text(encoding="utf-8", errors="ignore")]
+    # IMDSv2 enforced everywhere EC2 is launched.
+    # Read each file once and cache the text to avoid redundant I/O.
+    ec2_tf_files = []
+    for f in tf_files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if 'resource "aws_instance"' in text or 'resource "aws_launch_template"' in text:
+            ec2_tf_files.append((f, text))
     imds_missing = []
-    for tf in ec2_tf_files:
-        text = tf.read_text(encoding="utf-8")
+    for tf, text in ec2_tf_files:
         if 'http_tokens' not in text or '"required"' not in text:
             imds_missing.append(str(tf.relative_to(REPO)))
     if not imds_missing:
@@ -1022,10 +1030,9 @@ def test_security_hygiene() -> None:
         fail_test(S, "IMDSv2 enforced in all EC2 configs",
                   f"Missing in: {imds_missing}")
 
-    # EBS encryption in all EC2 configs
+    # EBS encryption in all EC2 configs (reuse cached texts from ec2_tf_files)
     ebs_missing = []
-    for tf in ec2_tf_files:
-        text = tf.read_text(encoding="utf-8")
+    for tf, text in ec2_tf_files:
         if "encrypted" not in text:
             ebs_missing.append(str(tf.relative_to(REPO)))
     if not ebs_missing:
@@ -1033,12 +1040,14 @@ def test_security_hygiene() -> None:
     else:
         fail_test(S, "EBS encryption in all EC2 configs", f"Missing in: {ebs_missing}")
 
-    # All KMS keys have key rotation enabled
-    kms_tf_files = [f for f in tf_files
-                    if 'resource "aws_kms_key"' in f.read_text(encoding="utf-8", errors="ignore")]
+    # All KMS keys have key rotation enabled (read once per file)
+    kms_tf_files = []
+    for f in tf_files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if 'resource "aws_kms_key"' in text:
+            kms_tf_files.append((f, text))
     rotation_missing = []
-    for tf in kms_tf_files:
-        text = tf.read_text(encoding="utf-8")
+    for tf, text in kms_tf_files:
         if "enable_key_rotation" not in text:
             rotation_missing.append(str(tf.relative_to(REPO)))
     if not rotation_missing:
@@ -1047,12 +1056,14 @@ def test_security_hygiene() -> None:
         fail_test(S, "KMS key rotation enabled in all files",
                   f"Possibly missing in: {rotation_missing}")
 
-    # All S3 buckets have public-access block
-    s3_tf_files = [f for f in tf_files
-                   if 'resource "aws_s3_bucket"' in f.read_text(encoding="utf-8", errors="ignore")]
+    # All S3 buckets have public-access block (read once per file)
+    s3_tf_files = []
+    for f in tf_files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if 'resource "aws_s3_bucket"' in text:
+            s3_tf_files.append((f, text))
     s3_no_block = []
-    for tf in s3_tf_files:
-        text = tf.read_text(encoding="utf-8")
+    for tf, text in s3_tf_files:
         if "aws_s3_bucket_public_access_block" not in text:
             s3_no_block.append(str(tf.relative_to(REPO)))
     if not s3_no_block:
