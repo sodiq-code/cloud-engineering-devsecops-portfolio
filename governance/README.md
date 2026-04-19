@@ -122,7 +122,7 @@ aws --endpoint-url=http://localhost:4566 organizations list-targets-for-policy \
 
 ---
 
-![Organisation Structure](../docs/week11/screenshots/org-success.png)
+![Organisation Structure](../docs/11-enterprise-governance/screenshots/org-success.png)
 *AWS Organizations structure deployed via Terraform to LocalStack*
 
 ---
