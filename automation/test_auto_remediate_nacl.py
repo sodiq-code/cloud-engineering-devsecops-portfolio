@@ -67,9 +67,9 @@ def test_find_vpc_id_success():
 def test_find_vpc_id_raises_when_no_vpc():
     with mock_aws():
         ec2 = make_ec2_client()
-        # Remove all VPCs including the default one
-        for v in ec2.describe_vpcs()["Vpcs"]:
-            ec2.delete_vpc(VpcId=v["VpcId"])
+        # Moto provides a default VPC that may not be deletable due to dependencies.
+        # Simulate an empty account response directly instead of force-deleting infra.
+        ec2.describe_vpcs = lambda: {"Vpcs": []}
         with pytest.raises(VPCNotFoundError):
             find_vpc_id(ec2)
 
@@ -192,9 +192,10 @@ def test_main_returns_one_on_vpc_not_found(monkeypatch):
     """main() returns exit code 1 when no VPC exists."""
     with mock_aws():
         ec2 = make_ec2_client()
-        for v in ec2.describe_vpcs()["Vpcs"]:
-            ec2.delete_vpc(VpcId=v["VpcId"])
-
         monkeypatch.setattr("auto_remediate_nacl.get_ec2_client", lambda **kw: ec2)
+        monkeypatch.setattr(
+            "auto_remediate_nacl.find_vpc_id",
+            lambda _ec2: (_ for _ in ()).throw(VPCNotFoundError("No VPC found")),
+        )
         result = main(["--ip", "203.0.113.5/32"])
         assert result == 1
