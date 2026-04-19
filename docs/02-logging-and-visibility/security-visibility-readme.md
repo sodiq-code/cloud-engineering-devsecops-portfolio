@@ -33,7 +33,7 @@ This week I focused on building basic visibility for a cloud security analyst wo
 
 ## Evidence
 
-All screenshots and notes are under `docs/week2/`:
+All screenshots and notes are under `docs/02-logging-and-visibility/`:
 
 - `notes.md` – setup notes and incident story
 - `screenshots/cloudtrail-bucket.png` – S3 logs bucket

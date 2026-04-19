@@ -114,10 +114,10 @@ aws --endpoint-url=http://localhost:4566 s3 ls
 
 ## 6. Evidence
 
-![Terraform Plan](../docs/week3/screenshots/plan.png)
+![Terraform Plan](../docs/03-terraform-fundamentals/screenshots/plan.png)
 *Terraform plan showing all 9 security resources to be created*
 
-![Terraform Apply](../docs/week3/screenshots/apply.png)
+![Terraform Apply](../docs/03-terraform-fundamentals/screenshots/apply.png)
 *Terraform apply completing successfully with all security controls active*
 
 ---
