@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   # The LocalStack Pro Service
   localstack:
@@ -11,7 +10,7 @@ services:
       - "4510-4559:4510-4559"
       - "5678:5678"
     environment:
-      - LOCALSTACK_AUTH_TOKEN=ls-yiLatazO-6832-wOrA-TIgI-Cito4778a78f
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
       - SERVICES=s3,ec2,iam,sts,kms,cloudtrail,guardduty  # AWS services to emulate
       - PERSISTENCE=1 # Enables persistence for LocalStack data
       - DOCKER_HOST=unix:///var/run/docker.sock  # Required for sibling container spawning

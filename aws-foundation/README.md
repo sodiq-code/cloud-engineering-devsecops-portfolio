@@ -64,8 +64,12 @@ Deploy a fully hardened, modular web server infrastructure using Terraform — d
 ```bash
 cd aws-foundation
 
-# Start LocalStack
-docker-compose -f ../s3-secure-storage/localstack-docker-compose.yml up -d
+# Bootstrap environment
+cp .env.example .env
+# Edit .env and set LS_TOKEN to your rotated LocalStack token
+
+# Start LocalStack for this project
+docker-compose -f localstack-docker-compose.yml up -d
 
 # Deploy
 terraform init

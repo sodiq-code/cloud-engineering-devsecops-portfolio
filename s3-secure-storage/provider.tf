@@ -16,8 +16,8 @@ provider "aws" {                           # Configure the AWS provider instance
   skip_credentials_validation = true       # Skip checking if credentials are valid (for local testing)
   skip_requesting_account_id  = true       # Skip retrieving AWS account ID (not needed for LocalStack)
 
-  endpoints {                    # Override default AWS service endpoints
-    s3 = "http://localhost:4566" # Point S3 API calls to LocalStack running on localhost:4566
+  endpoints {                     # Override default AWS service endpoints
+    s3  = "http://localhost:4566" # Point S3 API calls to LocalStack running on localhost:4566
     kms = "http://localhost:4566"
   }
 }

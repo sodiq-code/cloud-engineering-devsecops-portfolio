@@ -10,7 +10,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 4.67.0"  # Pinned for LocalStack compatibility
+      version = "~> 4.67.0" # Pinned for LocalStack compatibility
     }
   }
 }
@@ -38,7 +38,7 @@ resource "aws_organizations_organization" "org" {
     "cloudtrail.amazonaws.com",
     "config.amazonaws.com"
   ]
-  feature_set          = "ALL"                           # Required for SCPs
+  feature_set          = "ALL" # Required for SCPs
   enabled_policy_types = ["SERVICE_CONTROL_POLICY"]
 }
 
@@ -92,8 +92,8 @@ resource "aws_organizations_policy" "deny_root_actions" {
   # root accounts in ALL member accounts. This is different from the KMS key policy fix
   # (which scopes the key admin to a specific account ARN). Organisation SCPs target
   # cross-account principals by design; a wildcard here is the correct AWS pattern.
-  content     = file("${path.module}/policies/scp_deny_root_actions.json")
-  type        = "SERVICE_CONTROL_POLICY"
+  content = file("${path.module}/policies/scp_deny_root_actions.json")
+  type    = "SERVICE_CONTROL_POLICY"
 }
 
 # =============================================================================

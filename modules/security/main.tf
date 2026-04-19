@@ -59,12 +59,12 @@ resource "aws_kms_alias" "cloudtrail_alias" {
 # Features: multi-region, log file validation, KMS encryption
 # =============================================================================
 resource "aws_cloudtrail" "main" {
-    name                          = "${var.environment}-audit-trail"
-    s3_bucket_name                = var.log_bucket_name
-    include_global_service_events = true  # Capture IAM, STS, CloudFront events
-    is_multi_region_trail         = true  # Monitor all AWS regions
-    enable_log_file_validation    = true  # Detect log tampering via SHA-256 digest files
-    kms_key_id                    = aws_kms_key.cloudtrail_key.arn
+  name                          = "${var.environment}-audit-trail"
+  s3_bucket_name                = var.log_bucket_name
+  include_global_service_events = true # Capture IAM, STS, CloudFront events
+  is_multi_region_trail         = true # Monitor all AWS regions
+  enable_log_file_validation    = true # Detect log tampering via SHA-256 digest files
+  kms_key_id                    = aws_kms_key.cloudtrail_key.arn
 }
 
 # =============================================================================
@@ -72,6 +72,6 @@ resource "aws_cloudtrail" "main" {
 # Monitors VPC flow logs, DNS logs, CloudTrail events for suspicious behaviour
 # =============================================================================
 resource "aws_guardduty_detector" "main" {
-    enable                       = true
-    finding_publishing_frequency = "FIFTEEN_MINUTES"  # Export findings every 15 min
+  enable                       = true
+  finding_publishing_frequency = "FIFTEEN_MINUTES" # Export findings every 15 min
 }

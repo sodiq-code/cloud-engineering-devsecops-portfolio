@@ -98,6 +98,10 @@ kms_key_id  = "abc123-..."
 ```bash
 cd s3-secure-storage
 
+# Bootstrap environment
+cp .env.example .env
+# Edit .env and set LS_TOKEN to your rotated LocalStack token
+
 # Start LocalStack
 docker-compose -f localstack-docker-compose.yml up -d
 

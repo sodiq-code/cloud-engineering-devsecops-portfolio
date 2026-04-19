@@ -179,7 +179,8 @@ Prometheus metrics ──► Metrics Server ──► HPA Controller
 ### Step 1: Start Cloud Emulation Layer
 ```bash
 cd k8s-ecommerce-project/finops
-cp .env.example .env && echo "LS_TOKEN=your_token_here" >> .env
+cp .env.example .env
+# Edit .env and set LS_TOKEN to your rotated LocalStack token
 docker-compose up -d
 curl http://localhost:4566/_localstack/health   # Verify services are running
 ```

@@ -56,7 +56,7 @@ resource "google_container_cluster" "my_cluster" {
   # Private nodes: hide node IPs from the public internet (CKV_GCP_25, CKV_GCP_64)
   private_cluster_config {
     enable_private_nodes    = true
-    enable_private_endpoint = false           # Keep public endpoint for kubectl access
+    enable_private_endpoint = false # Keep public endpoint for kubectl access
     master_ipv4_cidr_block  = "172.16.0.0/28"
   }
 
@@ -66,7 +66,7 @@ resource "google_container_cluster" "my_cluster" {
   # Example for production: "203.0.113.10/32" (your office/VPN public IP)
   master_authorized_networks_config {
     cidr_blocks {
-      cidr_block   = "192.168.49.2/32"       # Placeholder — replace with your public management IP
+      cidr_block   = "192.168.49.2/32" # Placeholder — replace with your public management IP
       display_name = "External Access"
     }
   }
